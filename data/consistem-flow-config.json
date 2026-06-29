@@ -298,10 +298,16 @@
         "enviar-para-conferencia": {
           "x": 1188.7318032786882,
           "y": 52.95737704918029
+        },
+        "emissao-de-notas": {
+          "x": 1807.0426229508196,
+          "y": 58.591475409836065
         }
       },
       "edges": {
-        "removed": [],
+        "removed": [
+          "e:emissao-de-notas:pos-pre-listar-padrao-teste:seq"
+        ],
         "overrides": {},
         "custom": []
       }
@@ -373,5 +379,5 @@
       }
     }
   },
-  "grupoAtivo": null
+  "grupoAtivo": "faturamento"
 }
