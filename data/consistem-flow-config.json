@@ -1,0 +1,377 @@
+{
+  "nodes": {
+    "criar-pedido": {
+      "id": "criar-pedido",
+      "label": "CRIAR PEDIDO",
+      "tipo": "processo"
+    },
+    "tentar-sugerir": {
+      "id": "tentar-sugerir",
+      "label": "TENTAR SUGERIR",
+      "tipo": "processo"
+    },
+    "bloqueio-credito": {
+      "id": "bloqueio-credito",
+      "label": "BLOQUEIO CRÉDITO?",
+      "tipo": "decisao"
+    },
+    "desbloquear-credito": {
+      "id": "desbloquear-credito",
+      "label": "DESBLOQUEAR PEDIDO CRÉDITO",
+      "tipo": "processo"
+    },
+    "sugerir-pedido": {
+      "id": "sugerir-pedido",
+      "label": "SUGERIR PEDIDO",
+      "tipo": "processo"
+    },
+    "listar": {
+      "id": "listar",
+      "label": "LISTAR",
+      "tipo": "processo",
+      "exclusivoCliente": false
+    },
+    "conferir": {
+      "id": "conferir",
+      "label": "CONFERIR",
+      "tipo": "processo",
+      "exclusivoCliente": false
+    },
+    "enviar-para-conferencia": {
+      "id": "enviar-para-conferencia",
+      "label": "ENVIAR PARA CONFERENCIA",
+      "tipo": "processo",
+      "exclusivoCliente": false
+    },
+    "selecionar-para-faturamento": {
+      "id": "selecionar-para-faturamento",
+      "label": "SELECIONAR PARA FATURAMENTO",
+      "tipo": "processo",
+      "exclusivoCliente": false
+    },
+    "emissao-de-notas": {
+      "id": "emissao-de-notas",
+      "label": "EMISSAO DE NOTAS",
+      "tipo": "processo",
+      "exclusivoCliente": false
+    },
+    "validar-estoque": {
+      "id": "validar-estoque",
+      "label": "VALIDAR ESTOQUE",
+      "tipo": "processo",
+      "exclusivoCliente": true
+    },
+    "conferir-jogos": {
+      "id": "conferir-jogos",
+      "label": "CONFERIR JOGOS",
+      "tipo": "processo",
+      "exclusivoCliente": true
+    },
+    "tem-jogo": {
+      "id": "tem-jogo",
+      "label": "TEM JOGO?",
+      "tipo": "decisao",
+      "exclusivoCliente": true
+    },
+    "revisar-catalogo": {
+      "id": "revisar-catalogo",
+      "label": "REVISAR CATÁLOGO",
+      "tipo": "processo",
+      "exclusivoCliente": true
+    },
+    "tem-jogo-2": {
+      "id": "tem-jogo-2",
+      "label": "TEM JOGO?",
+      "tipo": "decisao",
+      "exclusivoCliente": true
+    },
+    "pode-sugerir-jogos-na-appel": {
+      "id": "pode-sugerir-jogos-na-appel",
+      "label": "PODE SUGERIR JOGOS NA APPEL",
+      "tipo": "processo",
+      "exclusivoCliente": true
+    },
+    "pos-sugerir-padrao-teste": {
+      "id": "pos-sugerir-padrao-teste",
+      "label": "POS-SUGERIR (PADRÃO TESTE)",
+      "tipo": "processo",
+      "exclusivoCliente": false
+    },
+    "pos-pre-listar-padrao-teste": {
+      "id": "pos-pre-listar-padrao-teste",
+      "label": "POS-PRE-LISTAR (PADRÃO TESTE)",
+      "tipo": "processo",
+      "exclusivoCliente": false
+    }
+  },
+  "baseFlow": {
+    "sequenciaPosCredito": [
+      "pos-sugerir-padrao-teste",
+      "listar",
+      "enviar-para-conferencia",
+      "conferir",
+      "selecionar-para-faturamento",
+      "emissao-de-notas",
+      "pos-pre-listar-padrao-teste"
+    ],
+    "nome": "Fluxo padrão",
+    "descricao": "Fluxo base do grupo Faturamento.",
+    "regras": {
+      "subfluxos": [],
+      "ligacoes": [],
+      "decisoes": []
+    }
+  },
+  "grupos": [
+    {
+      "id": "faturamento",
+      "nome": "Faturamento",
+      "descricao": ""
+    }
+  ],
+  "grupoFluxos": {
+    "faturamento": {
+      "nome": "Fluxo padrão",
+      "descricao": "Fluxo base do grupo Faturamento.",
+      "sequenciaPosCredito": [
+        "pos-sugerir-padrao-teste",
+        "listar",
+        "enviar-para-conferencia",
+        "conferir",
+        "selecionar-para-faturamento",
+        "emissao-de-notas",
+        "pos-pre-listar-padrao-teste"
+      ],
+      "estrutura": "faturamento",
+      "regras": {
+        "subfluxos": [],
+        "ligacoes": [],
+        "decisoes": []
+      },
+      "cadastrado": true,
+      "creditFork": {
+        "decisao": "bloqueio-credito",
+        "desbloquear": "desbloquear-credito",
+        "mergeEm": "sugerir-pedido",
+        "retornoPara": "sugerir-pedido"
+      }
+    }
+  },
+  "clientes": [
+    {
+      "id": "padrao",
+      "nome": "Padrão",
+      "temCustomizacao": false
+    },
+    {
+      "id": "gatabakana",
+      "nome": "GATABAKANA",
+      "temCustomizacao": true,
+      "tema": "gatabakana",
+      "grupos": [
+        "faturamento"
+      ]
+    },
+    {
+      "id": "appel",
+      "nome": "APPEL",
+      "temCustomizacao": true,
+      "tema": "appel",
+      "grupos": [
+        "faturamento"
+      ]
+    }
+  ],
+  "clientTemas": {
+    "gatabakana": {
+      "cor": "#eb242e",
+      "fundo": "#eb242e22"
+    },
+    "appel": {
+      "cor": "#24eb45",
+      "fundo": "#24eb4522"
+    }
+  },
+  "customizations": {
+    "gatabakana": {
+      "nome": "GATABAKANA",
+      "descricao": "",
+      "tema": "gatabakana",
+      "puladas": [],
+      "insercoes": [
+        {
+          "id": "validar-estoque",
+          "apos": "listar"
+        },
+        {
+          "id": "tem-jogo",
+          "apos": "teste-2"
+        }
+      ],
+      "ligacoes": [
+        {
+          "de": "conferir-jogos",
+          "para": "conferir",
+          "tipo": "salto",
+          "rotulo": "gatilho"
+        }
+      ],
+      "decisoes": [
+        {
+          "no": "tem-jogo-2",
+          "sim": "conferir",
+          "nao": "listar",
+          "apos": "revisar-catalogo"
+        }
+      ],
+      "subfluxos": [
+        {
+          "de": "conferir-jogos",
+          "passos": [
+            "revisar-catalogo",
+            "tem-jogo-2"
+          ],
+          "para": "listar",
+          "rotulo": ""
+        }
+      ],
+      "insertBefore": {
+        "listar": [
+          "conferir-jogos"
+        ]
+      }
+    },
+    "appel": {
+      "nome": "APPEL",
+      "descricao": "",
+      "tema": "appel",
+      "puladas": [
+        "listar"
+      ],
+      "insercoes": [],
+      "ligacoes": [
+        {
+          "de": "pode-sugerir-jogos-na-appel",
+          "para": "enviar-para-conferencia",
+          "tipo": "salto",
+          "rotulo": "gatilho"
+        }
+      ],
+      "decisoes": [],
+      "subfluxos": [],
+      "insertBefore": {
+        "listar": [
+          "pode-sugerir-jogos-na-appel"
+        ]
+      }
+    }
+  },
+  "creditFork": {
+    "decisao": "bloqueio-credito",
+    "desbloquear": "desbloquear-credito",
+    "mergeEm": "sugerir-pedido",
+    "retornoPara": "sugerir-pedido"
+  },
+  "diagramLayouts": {
+    "faturamento:padrao": {
+      "nodes": {
+        "sugerir-pedido": {
+          "x": 677.5,
+          "y": 61
+        },
+        "bloqueio-credito": {
+          "x": 381.5,
+          "y": 56
+        },
+        "desbloquear-credito": {
+          "x": 409.5,
+          "y": 209.5
+        },
+        "listar": {
+          "x": 1015.2924590163932,
+          "y": 62.27606557377048
+        },
+        "pos-sugerir-padrao-teste": {
+          "x": 824.5252459016393,
+          "y": 61.257704918032786
+        },
+        "enviar-para-conferencia": {
+          "x": 1188.7318032786882,
+          "y": 52.95737704918029
+        }
+      },
+      "edges": {
+        "removed": [],
+        "overrides": {},
+        "custom": []
+      }
+    },
+    "faturamento:gatabakana": {
+      "nodes": {
+        "teste-2": {
+          "x": 1000.0148653458641,
+          "y": 348.93704091761015
+        },
+        "tem-jogo": {
+          "x": 1380.1699206425783,
+          "y": 384.7884246203294
+        },
+        "tem-jogo-2": {
+          "x": 1097.322117965624,
+          "y": 543.1782173337244
+        },
+        "desbloquear-credito": {
+          "x": 409.16300903284264,
+          "y": 228.3260180656852
+        },
+        "validar-estoque": {
+          "x": 1224.2087268265534,
+          "y": -32.62469394507343
+        },
+        "conferir-jogos": {
+          "x": 932.1491354306909,
+          "y": 163.5493339338979
+        },
+        "enviar-para-conferencia": {
+          "x": 1424.1813258106386,
+          "y": -74.20635824904403
+        },
+        "conferir": {
+          "x": 1618.0547969199063,
+          "y": 164.21137616808
+        },
+        "revisar-catalogo": {
+          "x": 820.8327868852459,
+          "y": 344.7186885245902
+        },
+        "listar": {
+          "x": 1021.2222950819673,
+          "y": -31.895081967213116
+        }
+      },
+      "edges": {
+        "removed": [],
+        "overrides": {},
+        "custom": []
+      }
+    },
+    "faturamento:appel": {
+      "nodes": {
+        "pode-sugerir-jogos-na-appel": {
+          "x": 885.3674686903531,
+          "y": 160.94426937960696
+        },
+        "enviar-para-conferencia": {
+          "x": 1361.2825022940349,
+          "y": 191.65831829116763
+        }
+      },
+      "edges": {
+        "removed": [],
+        "overrides": {},
+        "custom": []
+      }
+    }
+  },
+  "grupoAtivo": null
+}

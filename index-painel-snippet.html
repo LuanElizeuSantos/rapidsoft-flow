@@ -1,0 +1,96 @@
+  <aside id="painel-manutencao" class="painel-manutencao">
+    <div class="painel-manutencao__header">
+      <h3>Manutenção — <span id="manutencao-cliente">Padrão</span></h3>
+      <button type="button" class="btn-fechar" id="btn-fechar-manutencao" title="Fechar">✕</button>
+    </div>
+
+    <nav class="painel-tabs" role="tablist">
+      <button type="button" class="painel-tab painel-tab--ativo" data-tab="etapas" role="tab">Etapas</button>
+      <button type="button" class="painel-tab" data-tab="regras" role="tab" id="tab-btn-regras">Regras</button>
+    </nav>
+
+    <div class="painel-corpo">
+      <!-- Aba: Etapas -->
+      <div id="tab-etapas" class="painel-tab-pane painel-tab-pane--ativa" role="tabpanel">
+        <details class="painel-sistema">
+          <summary>Bloco fixo do sistema</summary>
+          <ul id="lista-sistema" class="lista-sistema"></ul>
+          <div class="painel-campo">
+            <label for="select-retorno-credito">Desbloquear volta para</label>
+            <select id="select-retorno-credito" class="input-select"></select>
+          </div>
+        </details>
+
+        <p class="painel-dica">Ordem das etapas após o crédito. Use ⊘ para pular etapas do padrão.</p>
+        <ol id="lista-sequencia" class="lista-sequencia"></ol>
+
+        <div id="secao-puladas" class="painel-box" hidden>
+          <h4>Puladas neste cliente</h4>
+          <ul id="lista-puladas" class="lista-puladas"></ul>
+        </div>
+
+        <div class="painel-box painel-box--add">
+          <h4>Adicionar etapa</h4>
+          <div class="painel-campo">
+            <label for="input-nova-etapa">Criar nova</label>
+            <div class="painel-linha-stacked">
+              <input type="text" id="input-nova-etapa" class="input-texto" placeholder="Nome da etapa">
+              <button type="button" class="btn-acao btn-acao--block" id="btn-criar-etapa">Criar</button>
+            </div>
+          </div>
+          <div class="painel-campo">
+            <label for="select-etapa">Ou inserir existente</label>
+            <div class="painel-linha-stacked">
+              <select id="select-etapa" class="input-select"></select>
+              <button type="button" class="btn-acao btn-acao--block" id="btn-inserir-etapa">Inserir no fim</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Aba: Regras -->
+      <div id="tab-regras" class="painel-tab-pane" role="tabpanel" hidden>
+        <p class="painel-dica">Gatilhos pulam etapas do meio. Decisões criam ramificações SIM/NÃO.</p>
+
+        <div class="painel-box">
+          <h4>Gatilho (salto direto)</h4>
+          <ul id="lista-gatilhos" class="lista-regras"></ul>
+          <div class="painel-campo">
+            <label for="select-salto-de">De</label>
+            <select id="select-salto-de" class="input-select"></select>
+          </div>
+          <div class="painel-campo">
+            <label for="select-salto-para">Para</label>
+            <select id="select-salto-para" class="input-select"></select>
+          </div>
+          <button type="button" class="btn-acao btn-acao--block" id="btn-adicionar-salto">Adicionar gatilho</button>
+        </div>
+
+        <div class="painel-box">
+          <h4>Decisão</h4>
+          <ul id="lista-decisoes" class="lista-regras"></ul>
+          <div class="painel-campo">
+            <label for="input-decisao-label">Pergunta</label>
+            <input type="text" id="input-decisao-label" class="input-texto" placeholder="Ex: TEM JOGO?">
+          </div>
+          <div class="painel-campo">
+            <label for="select-decisao-sim">Se SIM, vai para</label>
+            <select id="select-decisao-sim" class="input-select"></select>
+          </div>
+          <div class="painel-campo">
+            <label for="select-decisao-nao">Se NÃO, vai para</label>
+            <select id="select-decisao-nao" class="input-select"></select>
+          </div>
+          <button type="button" class="btn-acao btn-acao--block" id="btn-criar-decisao">Criar decisão</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="painel-footer">
+      <button type="button" class="btn-acao btn-acao--primario btn-acao--block" id="btn-salvar">Salvar</button>
+      <div class="painel-footer__sec">
+        <button type="button" class="btn-acao btn-acao--block" id="btn-exportar">Exportar JSON</button>
+        <button type="button" class="btn-acao btn-acao--block btn-acao--danger-outline" id="btn-resetar">Restaurar padrão</button>
+      </div>
+    </footer>
+  </aside>

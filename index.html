@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rapidsoft — Fluxos de Faturamento</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/capa.css">
+</head>
+<body class="capa">
+  <header class="capa-header">
+    <div class="capa-header__brand">
+      <h1>Rapidsoft</h1>
+      <p>Gestão de fluxos por grupo</p>
+    </div>
+    <div class="capa-header__acoes">
+      <button type="button" class="btn-acao" id="btn-exportar-tudo">Exportar JSON</button>
+      <button type="button" class="btn-acao btn-acao--danger-outline" id="btn-resetar-tudo">Limpar tudo</button>
+    </div>
+  </header>
+
+  <main class="capa-main">
+    <section class="capa-grupos-bar">
+      <div class="capa-grupos-bar__select">
+        <label for="select-grupo">Grupo</label>
+        <select id="select-grupo" class="input-select capa-select-grupo"></select>
+      </div>
+      <div class="capa-grupos-bar__acoes">
+        <button type="button" class="btn-acao" id="btn-editar-grupo">Editar grupo</button>
+        <button type="button" class="btn-acao btn-acao--primario" id="btn-abrir-dialog-grupo">+ Cadastrar grupo</button>
+      </div>
+    </section>
+
+    <div id="painel-grupo" class="capa-painel-grupo">
+      <p id="grupo-descricao" class="capa-grupo-descricao"></p>
+
+      <section class="capa-secao">
+        <div class="capa-secao__topo capa-secao__topo--com-acao">
+          <div>
+            <h2>Fluxos do grupo</h2>
+            <p class="capa-secao__dica">Cadastre o fluxo padrão deste grupo — base herdada pelos clientes.</p>
+          </div>
+          <button type="button" class="btn-acao btn-acao--primario" id="btn-abrir-dialog-fluxo" hidden>+ Cadastrar fluxo padrão</button>
+        </div>
+        <div id="lista-fluxos" class="capa-cards"></div>
+      </section>
+
+      <section class="capa-secao">
+        <div class="capa-secao__topo">
+          <h2>Clientes do grupo</h2>
+          <p class="capa-secao__dica">Clientes visíveis neste grupo. Um cliente pode pertencer a vários grupos ou a todos.</p>
+        </div>
+        <div id="lista-clientes" class="capa-cards"></div>
+
+        <div id="secao-novo-cliente" class="capa-form-box">
+          <h3>Novo cliente</h3>
+          <form id="form-cliente" class="capa-form">
+            <div class="capa-form__grid">
+              <div class="capa-campo">
+                <label for="input-cliente-nome">Nome</label>
+                <input type="text" id="input-cliente-nome" class="input-texto" placeholder="Ex: ACME" required>
+              </div>
+              <div class="capa-campo">
+                <label for="input-cliente-cor">Cor no diagrama</label>
+                <input type="color" id="input-cliente-cor" class="input-cor" value="#2563eb">
+              </div>
+            </div>
+            <div class="capa-campo">
+              <label for="input-cliente-descricao">Descrição (opcional)</label>
+              <input type="text" id="input-cliente-descricao" class="input-texto" placeholder="Resumo das customizações">
+            </div>
+            <fieldset class="capa-fieldset">
+              <legend>Visível em</legend>
+              <label class="painel-radio">
+                <input type="radio" name="cliente-grupos-modo" value="todos" checked>
+                Todos os grupos
+              </label>
+              <label class="painel-radio">
+                <input type="radio" name="cliente-grupos-modo" value="especificos">
+                Grupos específicos
+              </label>
+              <div id="cliente-grupos-checkboxes" class="capa-grupos-checkboxes" hidden></div>
+            </fieldset>
+            <button type="submit" class="btn-acao btn-acao--primario">Cadastrar cliente</button>
+          </form>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="dialog-grupo" class="capa-dialog">
+    <form id="form-grupo" class="capa-dialog__form">
+      <h3 id="dialog-grupo-titulo">Cadastrar grupo</h3>
+      <div class="capa-campo">
+        <label for="input-grupo-nome">Nome do grupo</label>
+        <input type="text" id="input-grupo-nome" class="input-texto" placeholder="Ex: Expedição" required>
+      </div>
+      <div class="capa-campo">
+        <label for="input-grupo-descricao">Descrição (opcional)</label>
+        <input type="text" id="input-grupo-descricao" class="input-texto" placeholder="Ex: Fluxos de expedição e separação">
+      </div>
+      <div class="capa-dialog__acoes capa-dialog__acoes--entre">
+        <button type="button" class="btn-acao btn-acao--danger-outline" id="btn-excluir-grupo" hidden>Excluir grupo</button>
+        <div class="capa-dialog__acoes">
+          <button type="button" class="btn-acao" id="btn-cancelar-grupo">Cancelar</button>
+          <button type="submit" class="btn-acao btn-acao--primario">Salvar grupo</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-fluxo" class="capa-dialog">
+    <form id="form-fluxo" class="capa-dialog__form">
+      <h3>Cadastrar fluxo padrão</h3>
+      <p id="dialog-fluxo-grupo" class="capa-dialog__subtitulo"></p>
+      <div class="capa-campo">
+        <label for="input-fluxo-nome">Nome do fluxo</label>
+        <input type="text" id="input-fluxo-nome" class="input-texto" placeholder="Ex: Fluxo padrão" value="Fluxo padrão" required>
+      </div>
+      <div class="capa-campo">
+        <label for="input-fluxo-descricao">Descrição (opcional)</label>
+        <input type="text" id="input-fluxo-descricao" class="input-texto" placeholder="Resumo do processo deste grupo">
+      </div>
+      <div class="capa-dialog__acoes">
+        <button type="button" class="btn-acao" id="btn-cancelar-fluxo">Cancelar</button>
+        <button type="button" class="btn-acao btn-acao--primario" id="btn-salvar-fluxo">Cadastrar fluxo</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-editar-fluxo" class="capa-dialog">
+    <form id="form-editar-fluxo" class="capa-dialog__form">
+      <h3>Editar fluxo padrão</h3>
+      <p id="dialog-editar-fluxo-grupo" class="capa-dialog__subtitulo"></p>
+      <div class="capa-campo">
+        <label for="input-editar-fluxo-nome">Nome do fluxo</label>
+        <input type="text" id="input-editar-fluxo-nome" class="input-texto" required>
+      </div>
+      <div class="capa-campo">
+        <label for="input-editar-fluxo-descricao">Descrição (opcional)</label>
+        <input type="text" id="input-editar-fluxo-descricao" class="input-texto">
+      </div>
+      <div class="capa-dialog__acoes capa-dialog__acoes--entre">
+        <button type="button" class="btn-acao btn-acao--danger-outline" id="btn-excluir-fluxo">Excluir fluxo</button>
+        <div class="capa-dialog__acoes">
+          <button type="button" class="btn-acao" id="btn-cancelar-editar-fluxo">Cancelar</button>
+          <button type="submit" class="btn-acao btn-acao--primario">Salvar</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/capa-bootstrap.js"></script>
+</body>
+</html>
