@@ -16,7 +16,7 @@ npm install
 npm run dev
 ```
 
-Abre em **http://localhost:5173/fluxo.html** (diagrama) ou **/index.html** (capa).
+Abre em **http://localhost:5173/index.html** (menu principal). Diagrama: **/fluxo.html**.
 
 ## Salvar e versionar o fluxo
 

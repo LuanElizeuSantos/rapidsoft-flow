@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -30,6 +30,7 @@ import {
   connectionToSerialized,
   inferHiddenAutoEdgeSemantics,
   makeCustomEdgeId,
+  normalizeConnectionDirection,
   serializeEdge,
   type SerializedEdge,
 } from '../lib/diagramEdges';
@@ -55,6 +56,7 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
   const built = useMemo(() => buildFlowGraph(clienteId), [clienteId]);
   const [nodes, setNodes] = useNodesState(built.nodes);
   const [edges, setEdges] = useEdgesState(built.edges);
+  const connectOriginRef = useRef<string | null>(null);
 
   const strokePadrao = clienteCor || '#64748b';
 
@@ -111,11 +113,14 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
     (connection: Connection) => {
       if (clienteId === 'padrao') return;
 
-      const source = connection.source!;
-      const target = connection.target!;
+      const normalized = normalizeConnectionDirection(connection, connectOriginRef.current);
+      if (!normalized) return;
+
+      const source = normalized.source!;
+      const target = normalized.target!;
       const semantics = inferHiddenAutoEdgeSemantics(clienteId, source, target);
       const id = makeCustomEdgeId(source, target);
-      const serialized = connectionToSerialized(connection, id, strokePadrao, semantics);
+      const serialized = connectionToSerialized(normalized, id, strokePadrao, semantics);
       FlowStore.addCustomEdge(clienteId, serialized);
 
       const edgeType = semantics?.edgeType || 'flex';
@@ -123,8 +128,8 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
         id,
         source,
         target,
-        sourceHandle: connection.sourceHandle,
-        targetHandle: connection.targetHandle,
+        sourceHandle: normalized.sourceHandle,
+        targetHandle: normalized.targetHandle,
         type: edgeType,
         label: semantics?.label,
         labelShowBg: true,
@@ -152,6 +157,14 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
     },
     [clienteId, persistir, setEdges, strokePadrao],
   );
+
+  const onConnectStart = useCallback((_: unknown, params: { nodeId?: string | null }) => {
+    connectOriginRef.current = params.nodeId ?? null;
+  }, []);
+
+  const onConnectEnd = useCallback(() => {
+    connectOriginRef.current = null;
+  }, []);
 
   const onReconnect = useCallback(
     (oldEdge: Parameters<typeof reconnectEdge>[0], newConnection: Connection) => {
@@ -185,10 +198,13 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
         onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
+        onConnectStart={onConnectStart}
+        onConnectEnd={onConnectEnd}
         onReconnect={onReconnect}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        connectionMode={ConnectionMode.Strict}
+        connectionMode={ConnectionMode.Loose}
+        connectionRadius={28}
         connectionLineType={ConnectionLineType.SmoothStep}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView

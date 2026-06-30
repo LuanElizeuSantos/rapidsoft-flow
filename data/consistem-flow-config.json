@@ -305,9 +305,7 @@
         }
       },
       "edges": {
-        "removed": [
-          "e:emissao-de-notas:pos-pre-listar-padrao-teste:seq"
-        ],
+        "removed": [],
         "overrides": {},
         "custom": []
       }
@@ -353,12 +351,209 @@
         "listar": {
           "x": 1021.2222950819673,
           "y": -31.895081967213116
+        },
+        "selecionar-para-faturamento": {
+          "x": 1851.2970491803278,
+          "y": 133.51606557377048
+        },
+        "emissao-de-notas": {
+          "x": 2084.713442622951,
+          "y": 128.50360655737705
+        },
+        "pos-pre-listar-padrao-teste": {
+          "x": 2256.3095081967213,
+          "y": 123.49114754098362
+        },
+        "bloqueio-credito": {
+          "x": 382.54560391911986,
+          "y": 60
         }
       },
       "edges": {
         "removed": [],
         "overrides": {},
-        "custom": []
+        "custom": [
+          {
+            "id": "custom:listar:conferir-jogos:1782816695332",
+            "source": "listar",
+            "target": "conferir-jogos",
+            "sourceHandle": "sim",
+            "targetHandle": "top-in",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:listar:1782817114705",
+            "source": "conferir-jogos",
+            "target": "listar",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "bottom-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:listar:1782817116915",
+            "source": "conferir-jogos",
+            "target": "listar",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "bottom-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:listar:1782817121325",
+            "source": "conferir-jogos",
+            "target": "listar",
+            "sourceHandle": "top-out",
+            "targetHandle": "bottom-in",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:listar:1782817126112",
+            "source": "conferir-jogos",
+            "target": "listar",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "bottom-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:listar:1782817128731",
+            "source": "conferir-jogos",
+            "target": "listar",
+            "sourceHandle": "right-out",
+            "targetHandle": "bottom-in",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:listar:1782817133421",
+            "source": "conferir-jogos",
+            "target": "listar",
+            "sourceHandle": "left-out",
+            "targetHandle": "bottom-in",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:listar:1782817136367",
+            "source": "conferir-jogos",
+            "target": "listar",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "bottom-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:listar:1782817138607",
+            "source": "conferir-jogos",
+            "target": "listar",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "bottom-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:validar-estoque:1782817140791",
+            "source": "conferir-jogos",
+            "target": "validar-estoque",
+            "sourceHandle": "top-out",
+            "targetHandle": "bottom-in",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:listar:1782817145068",
+            "source": "conferir-jogos",
+            "target": "listar",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "bottom-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:conferir:1782817147446",
+            "source": "conferir-jogos",
+            "target": "conferir",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "left-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir-jogos:conferir:1782817150331",
+            "source": "conferir-jogos",
+            "target": "conferir",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "right-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:conferir:enviar-para-conferencia:1782817152585",
+            "source": "conferir",
+            "target": "enviar-para-conferencia",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "bottom-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:pos-sugerir-padrao-teste:sugerir-pedido:1782817156273",
+            "source": "pos-sugerir-padrao-teste",
+            "target": "sugerir-pedido",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "bottom-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:sugerir-pedido:pos-sugerir-padrao-teste:1782817158875",
+            "source": "sugerir-pedido",
+            "target": "pos-sugerir-padrao-teste",
+            "sourceHandle": "right-out",
+            "targetHandle": "top-in",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:sugerir-pedido:revisar-catalogo:1782817161578",
+            "source": "sugerir-pedido",
+            "target": "revisar-catalogo",
+            "sourceHandle": "bottom-in",
+            "targetHandle": "left-out",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          },
+          {
+            "id": "custom:sugerir-pedido:conferir-jogos:1782817197053",
+            "source": "sugerir-pedido",
+            "target": "conferir-jogos",
+            "sourceHandle": "right-out",
+            "targetHandle": "bottom-in",
+            "type": "flex",
+            "stroke": "#eb242e",
+            "kind": "custom"
+          }
+        ]
       }
     },
     "faturamento:appel": {

@@ -8,6 +8,7 @@ const handleStyle = { width: 7, height: 7 };
 
 function EtapaNode({ data, selected }: NodeProps<EtapaNodeType>) {
   const v = data.variant;
+  const ehDecisao = v === 'decisao' || v === 'decisao-cliente';
   const [copiado, setCopiado] = useState(false);
   const temCodigo = Boolean(data.codigoRotina?.trim());
   const temComentario = Boolean(data.comentario?.trim());
@@ -29,12 +30,17 @@ function EtapaNode({ data, selected }: NodeProps<EtapaNodeType>) {
     <div
       className={`rf-node rf-node--${v}${selected ? ' rf-node--selected' : ''}${temComentario ? ' rf-node--com-comentario' : ''}${temCodigo ? ' rf-node--com-codigo' : ''}`}
     >
-      <Handle type="target" position={Position.Top} id="top-in" className="rf-handle" style={handleStyle} />
-      <Handle type="target" position={Position.Left} id="left-in" className="rf-handle" style={handleStyle} />
-      <Handle type="source" position={Position.Right} id="right-out" className="rf-handle" style={handleStyle} />
-      <Handle type="source" position={Position.Bottom} id="bottom-out" className="rf-handle" style={handleStyle} />
-      <Handle type="source" position={Position.Bottom} id="sim" className="rf-handle rf-handle--sim" style={{ ...handleStyle, left: '78%' }} />
-      <Handle type="target" position={Position.Bottom} id="bottom-in" className="rf-handle" style={{ ...handleStyle, left: '22%' }} />
+      <Handle type="target" position={Position.Top} id="top-in" className="rf-handle rf-handle--in" style={handleStyle} isConnectableStart />
+      <Handle type="source" position={Position.Top} id="top-out" className="rf-handle rf-handle--out" style={handleStyle} isConnectableEnd />
+      <Handle type="target" position={Position.Left} id="left-in" className="rf-handle rf-handle--in" style={handleStyle} isConnectableStart />
+      <Handle type="source" position={Position.Left} id="left-out" className="rf-handle rf-handle--out" style={handleStyle} isConnectableEnd />
+      <Handle type="target" position={Position.Right} id="right-in" className="rf-handle rf-handle--in" style={handleStyle} isConnectableStart />
+      <Handle type="source" position={Position.Right} id="right-out" className="rf-handle rf-handle--out" style={handleStyle} isConnectableEnd />
+      <Handle type="target" position={Position.Bottom} id="bottom-in" className="rf-handle rf-handle--in" style={handleStyle} isConnectableStart />
+      <Handle type="source" position={Position.Bottom} id="bottom-out" className="rf-handle rf-handle--out" style={handleStyle} isConnectableEnd />
+      {ehDecisao && (
+        <Handle type="source" position={Position.Bottom} id="sim" className="rf-handle rf-handle--sim" style={{ ...handleStyle, left: '78%' }} />
+      )}
 
       <div className="rf-node__corpo">
         <span className="rf-node__label">{data.label}</span>

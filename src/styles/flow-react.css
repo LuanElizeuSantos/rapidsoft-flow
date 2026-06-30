@@ -29,6 +29,15 @@
   transition: opacity 0.15s;
 }
 
+/* source por cima do target na mesma posição — permite puxar e receber na mesma bolinha */
+.rf-handle--out {
+  z-index: 2;
+}
+
+.rf-handle--in {
+  z-index: 1;
+}
+
 .rf-node:hover .rf-handle,
 .rf-node--selected .rf-handle {
   opacity: 1;

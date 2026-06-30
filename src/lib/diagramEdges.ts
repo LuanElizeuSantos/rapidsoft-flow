@@ -232,3 +232,27 @@ export function connectionToSerialized(
     dashed: semantics?.dashed,
   };
 }
+
+/** Garante que source/target sigam o nó onde o arraste começou. */
+export function normalizeConnectionDirection(
+  connection: Connection,
+  originNodeId: string | null | undefined,
+): Connection | null {
+  const a = connection.source;
+  const b = connection.target;
+  if (!a || !b || a === b) return null;
+
+  if (!originNodeId || a === originNodeId) return connection;
+
+  if (b === originNodeId) {
+    return {
+      ...connection,
+      source: b,
+      target: a,
+      sourceHandle: connection.targetHandle,
+      targetHandle: connection.sourceHandle,
+    };
+  }
+
+  return connection;
+}
