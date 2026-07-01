@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Panel, useReactFlow, useStore, type Edge } from '@xyflow/react';
 import { FlowStore } from '../../js/store.js';
 import { buildEdgeStyle, formatEdgeId } from '../lib/diagramEdges';
+import { strokeLinhaManual } from '../lib/edgeColors';
 
 type Props = {
   clienteId: string;
@@ -74,7 +75,11 @@ export default function EdgeEditToolbar({ clienteId, clienteCor, onPersist, onRe
   }, [clienteId, onPersist, screenToFlowPosition, setEdges]);
 
   const aplicarPatch = (edgeAtual: Edge, data: Record<string, unknown>) => {
-    const cor = (data.stroke as string) || strokeFrom(edgeAtual, clienteCor || '#64748b');
+    const kind = (edgeAtual.data as { kind?: string } | undefined)?.kind;
+    const fallback = strokeLinhaManual(clienteId, clienteCor, kind);
+    const cor = clienteId === 'padrao'
+      ? fallback
+      : ((data.stroke as string) || strokeFrom(edgeAtual, fallback));
     const dashed = data.dashed !== undefined ? Boolean(data.dashed) : isDashed(edgeAtual);
     const tipo = (data.type as string) || edgeAtual.type || 'default';
     const rotulo = data.label !== undefined ? (data.label as string) : (typeof edgeAtual.label === 'string' ? edgeAtual.label : '');
@@ -159,14 +164,16 @@ export default function EdgeEditToolbar({ clienteId, clienteCor, onPersist, onRe
               <option value="dashed">Pontilhada</option>
             </select>
           </label>
-          <label className="rf-edge-toolbar__campo rf-edge-toolbar__campo--cor">
-            Cor
-            <input
-              type="color"
-              value={strokeFrom(edge, '#64748b').startsWith('#') ? strokeFrom(edge, '#64748b') : '#64748b'}
-              onChange={(e) => aplicarPatch(edge, { stroke: e.target.value })}
-            />
-          </label>
+          {clienteId !== 'padrao' && (
+            <label className="rf-edge-toolbar__campo rf-edge-toolbar__campo--cor">
+              Cor
+              <input
+                type="color"
+                value={strokeFrom(edge, '#64748b').startsWith('#') ? strokeFrom(edge, '#64748b') : '#64748b'}
+                onChange={(e) => aplicarPatch(edge, { stroke: e.target.value })}
+              />
+            </label>
+          )}
 
           {ehCustom ? (
             <button type="button" className="rf-edge-toolbar__btn rf-edge-toolbar__btn--danger" onClick={ocultarOuExcluir}>

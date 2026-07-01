@@ -1141,6 +1141,30 @@ body {
   font-size: 0.62rem;
 }
 
+.etapa-card__detalhe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--cor-borda, #e2e8f0);
+}
+
+.etapa-card__detalhe-linha {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 12rem;
+  font-size: 0.75rem;
+  color: var(--cor-texto-sec, #64748b);
+}
+
+.etapa-card__detalhe-linha span {
+  white-space: nowrap;
+}
+
 .etapa-card__decisao-ramos {
   display: flex;
   flex-direction: column;
@@ -1283,6 +1307,27 @@ body {
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.25rem;
+}
+
+.ui-dialog__acoes--col {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.ui-dialog__vincular {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.25rem 0;
+}
+
+.ui-dialog__vincular-label {
+  font-size: 0.8rem;
+  color: var(--cor-texto-suave, #64748b);
+}
+
+.fluxo-info__voltar {
+  margin-bottom: 0.5rem;
 }
 
 .painel-dialog-merge::backdrop {

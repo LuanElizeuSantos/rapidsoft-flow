@@ -3,11 +3,13 @@
  */
 import { FlowStore } from './store.js';
 import { GRUPOS, CLIENTES, CLIENT_CUSTOMIZATIONS } from './flows.js';
-import { avisar, initUiDialog } from './ui-dialog.js';
+import { NODES } from './nodes.js';
+import { avisar, initUiDialog, confirmar, confirmarDuplo } from './ui-dialog.js';
 
 const CapaApp = {
   grupoSelecionado: null,
   fluxoSelecionado: null,
+  clienteSelecionadoProcessos: null,
   editandoClienteId: null,
   editandoGrupoId: null,
   editandoFluxoId: null,
@@ -25,6 +27,11 @@ const CapaApp = {
     this.selectGrupo = document.getElementById('select-grupo');
     this.grupoDescricao = document.getElementById('grupo-descricao');
     this.listaFluxos = document.getElementById('lista-fluxos');
+    this.secaoProcessosMacro = document.getElementById('secao-processos-macro');
+    this.listaProcessosMacro = document.getElementById('lista-processos-macro');
+    this.secaoProcessosCliente = document.getElementById('secao-processos-cliente');
+    this.listaProcessosCliente = document.getElementById('lista-processos-cliente');
+    this.selectClienteProcessos = document.getElementById('select-cliente-processos');
     this.listaClientes = document.getElementById('lista-clientes');
     this.formCliente = document.getElementById('form-cliente');
     this.checkboxesGrupos = document.getElementById('cliente-grupos-checkboxes');
@@ -34,7 +41,6 @@ const CapaApp = {
     this.formFluxo = document.getElementById('form-fluxo');
     this.dialogEditarFluxo = document.getElementById('dialog-editar-fluxo');
     this.formEditarFluxo = document.getElementById('form-editar-fluxo');
-    this.dialogConfirm = document.getElementById('dialog-confirm');
     this.btnCadastrarFluxo = document.getElementById('btn-abrir-dialog-fluxo');
     this.btnEditarGrupo = document.getElementById('btn-editar-grupo');
     this.selectFluxoClientes = document.getElementById('select-fluxo-clientes');
@@ -46,6 +52,15 @@ const CapaApp = {
       const json = FlowStore.exportarJSON();
       const hoje = new Date().toISOString().slice(0, 10);
       const nomeArquivo = `consistem-flow-${hoje}.json`;
+
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = nomeArquivo;
+      link.click();
+      URL.revokeObjectURL(url);
+
       try {
         await navigator.clipboard.writeText(json);
         await avisar(`JSON exportado (${nomeArquivo}) e copiado para a área de transferência.`);
@@ -65,6 +80,13 @@ const CapaApp = {
     this.selectFluxoClientes?.addEventListener('change', () => {
       this.fluxoSelecionado = this.selectFluxoClientes.value;
       this.renderizarClientes();
+      this.renderizarProcessosMacro();
+      this.renderizarProcessosCliente();
+    });
+
+    this.selectClienteProcessos?.addEventListener('change', () => {
+      this.clienteSelecionadoProcessos = this.selectClienteProcessos.value || null;
+      this.renderizarProcessosCliente();
     });
 
     document.getElementById('btn-abrir-dialog-grupo')?.addEventListener('click', () => {
@@ -128,57 +150,20 @@ const CapaApp = {
 
     this.renderizar();
     this.focusNovoClienteSeNecessario();
-    this.initConfirmDialog();
-  },
-
-  _confirmResolve: null,
-
-  initConfirmDialog() {
-    const btnSim = document.getElementById('btn-confirm-sim');
-    const btnNao = document.getElementById('btn-confirm-nao');
-    btnSim?.addEventListener('click', () => {
-      this.dialogConfirm?.close();
-      this._confirmResolve?.(true);
-      this._confirmResolve = null;
-    });
-    btnNao?.addEventListener('click', () => {
-      this.dialogConfirm?.close();
-      this._confirmResolve?.(false);
-      this._confirmResolve = null;
-    });
-    this.dialogConfirm?.addEventListener('cancel', () => {
-      this._confirmResolve?.(false);
-      this._confirmResolve = null;
-    });
-  },
-
-  confirmarCapa(mensagem) {
-    const el = document.getElementById('dialog-confirm-mensagem');
-    if (el) el.textContent = mensagem;
-    return new Promise((resolve) => {
-      this._confirmResolve = resolve;
-      this.dialogConfirm?.showModal();
-    });
   },
 
   async limparTudoComConfirmacao() {
-    const passo1 = await this.confirmarCapa(
+    const ok = await confirmarDuplo(
       'Limpar tudo e voltar ao estado inicial vazio?\n\n'
       + 'Serão removidos permanentemente:\n'
       + '• Todos os grupos\n'
       + '• Todos os fluxos\n'
       + '• Todos os clientes\n'
       + '• Dados sem commit',
-    );
-    if (!passo1) return;
-
-    const passo2 = await this.confirmarCapa(
       'Esta ação não pode ser desfeita.\n\n'
       + 'Confirma que deseja apagar TUDO agora?',
     );
-    if (!passo2) return;
-
-    FlowStore.resetar();
+    if (ok) FlowStore.resetar();
   },
 
   focusNovoClienteSeNecessario() {
@@ -289,7 +274,7 @@ const CapaApp = {
     if (clientesNoGrupo) {
       msg += `\n\n${clientesNoGrupo} cliente(s) deixarão de estar associados a este grupo (os clientes não são excluídos).`;
     }
-    if (!(await this.confirmarCapa(msg))) return;
+    if (!(await confirmar(msg))) return;
 
     if (!FlowStore.removerGrupo(id)) {
       await avisar('Não foi possível excluir o grupo.');
@@ -351,15 +336,16 @@ const CapaApp = {
     FlowStore.carregarGrupo(grupoId, fluxoId);
     this.renderizar();
 
-    if (await this.confirmarCapa(`Fluxo "${nome}" cadastrado. Deseja abrir o diagrama agora?`)) {
+    if (await confirmar(`Fluxo "${nome}" cadastrado. Deseja abrir o diagrama agora?`)) {
       location.href = this.urlFluxo('padrao', grupoId, fluxoId);
     }
   },
 
-  urlFluxo(clienteId, grupoId = this.grupoSelecionado, fluxoId = this.fluxoSelecionado) {
+  urlFluxo(clienteId, grupoId = this.grupoSelecionado, fluxoId = this.fluxoSelecionado, processoId = null) {
     const params = new URLSearchParams();
     if (grupoId) params.set('grupo', grupoId);
     if (fluxoId) params.set('fluxo', fluxoId);
+    if (processoId) params.set('processo', processoId);
     if (clienteId && clienteId !== 'padrao') params.set('cliente', clienteId);
     const qs = params.toString();
     return qs ? `fluxo.html?${qs}` : 'fluxo.html';
@@ -493,6 +479,7 @@ const CapaApp = {
       btn.addEventListener('click', () => {
         this.fluxoSelecionado = btn.dataset.verClientesFluxo;
         if (this.selectFluxoClientes) this.selectFluxoClientes.value = this.fluxoSelecionado;
+        this.renderizarProcessosMacro();
         this.renderizarClientes();
         document.getElementById('secao-clientes-fluxo')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
@@ -546,7 +533,7 @@ const CapaApp = {
       msg += '\n\nNão há clientes neste fluxo.';
     }
 
-    if (!(await this.confirmarCapa(msg))) return;
+    if (!(await confirmar(msg))) return;
 
     if (!FlowStore.removerFluxo(this.grupoSelecionado, fluxoId)) {
       await avisar('Não é possível excluir o único fluxo do grupo.');
@@ -557,6 +544,253 @@ const CapaApp = {
     this.fluxoSelecionado = FlowStore.listarFluxos(this.grupoSelecionado)[0]?.id || null;
     this.dialogEditarFluxo.close();
     this.renderizar();
+  },
+
+  renderizarProcessosMacro() {
+    if (!this.secaoProcessosMacro || !this.listaProcessosMacro) return;
+
+    const fluxos = FlowStore.listarFluxos(this.grupoSelecionado);
+    if (!this.grupoSelecionado || !fluxos.length || !this.fluxoSelecionado) {
+      this.secaoProcessosMacro.hidden = true;
+      this.listaProcessosMacro.innerHTML = '';
+      return;
+    }
+
+    const processos = FlowStore.listarProcessosDetalhados(
+      this.grupoSelecionado,
+      this.fluxoSelecionado,
+    );
+    this.secaoProcessosMacro.hidden = false;
+
+    if (!processos.length) {
+      this.listaProcessosMacro.innerHTML = `
+        <p class="capa-vazio">Nenhum passo detalhado ainda.
+        Abra o diagrama do fluxo macro e <strong>clique em uma etapa</strong> para detalhar.</p>`;
+      return;
+    }
+
+    const seq = FlowStore.getFluxoDef(this.grupoSelecionado, this.fluxoSelecionado)
+      ?.sequenciaPosCredito || [];
+    const fluxoMacro = fluxos.find((f) => f.id === this.fluxoSelecionado);
+
+    this.listaProcessosMacro.innerHTML = processos.map((p) => {
+      const vinculo = p.etapaMacroId
+        ? (NODES[p.etapaMacroId]?.label || p.etapaMacroId)
+        : 'Não vinculado';
+      const optsEtapa = [
+        '<option value="">— não vinculado —</option>',
+        ...seq.map((id) => {
+          const sel = p.etapaMacroId === id ? ' selected' : '';
+          return `<option value="${id}"${sel}>${NODES[id]?.label || id}</option>`;
+        }),
+      ].join('');
+
+      return `
+      <article class="capa-card capa-card--processo" data-processo="${p.id}">
+        <div class="capa-card__cor capa-card__cor--processo" aria-hidden="true"></div>
+        <div class="capa-card__corpo">
+          <h3 class="capa-card__titulo">${p.nome}</h3>
+          <p class="capa-card__descricao">${p.descricao || 'Sem descrição.'}</p>
+          <p class="capa-card__meta">${p.etapas} etapa(s) · vinculado: ${vinculo}</p>
+          <div class="capa-campo capa-campo--inline">
+            <label>Vincular ao passo do macro</label>
+            <select class="input-select" data-vincular-processo="${p.id}">${optsEtapa}</select>
+          </div>
+          <div class="capa-card__acoes">
+            <a href="${this.urlFluxo('padrao', this.grupoSelecionado, this.fluxoSelecionado, p.id)}"
+              class="btn-acao btn-acao--primario">Abrir detalhe</a>
+            <button type="button" class="btn-acao btn-acao--danger-outline" data-excluir-processo="${p.id}">Excluir</button>
+          </div>
+        </div>
+      </article>`;
+    }).join('');
+
+    const tituloSecao = this.secaoProcessosMacro.querySelector('h2');
+    if (tituloSecao) {
+      tituloSecao.textContent = `Processos do fluxo macro: ${fluxoMacro?.nome || ''}`;
+    }
+
+    this.listaProcessosMacro.querySelectorAll('[data-vincular-processo]').forEach((sel) => {
+      sel.addEventListener('change', async () => {
+        const processoId = sel.dataset.vincularProcesso;
+        const etapaId = sel.value;
+        if (!etapaId) {
+          const atual = FlowStore.getEtapaVinculadaProcesso(
+            this.grupoSelecionado,
+            this.fluxoSelecionado,
+            processoId,
+          );
+          if (atual) {
+            FlowStore.desvincularProcessoDetalhado(
+              this.grupoSelecionado,
+              this.fluxoSelecionado,
+              atual,
+            );
+          }
+        } else {
+          const r = FlowStore.vincularProcessoDetalhado(
+            this.grupoSelecionado,
+            this.fluxoSelecionado,
+            etapaId,
+            processoId,
+          );
+          if (!r.ok) await avisar(r.erro || 'Não foi possível vincular.');
+        }
+        this.renderizarProcessosMacro();
+      });
+    });
+
+    this.listaProcessosMacro.querySelectorAll('[data-excluir-processo]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const processoId = btn.dataset.excluirProcesso;
+        const proc = processos.find((x) => x.id === processoId);
+        if (!(await confirmar(`Excluir o processo detalhado "${proc?.nome || processoId}"?`))) {
+          return;
+        }
+        FlowStore.removerProcessoDetalhado(
+          this.grupoSelecionado,
+          this.fluxoSelecionado,
+          processoId,
+        );
+        this.renderizarProcessosMacro();
+      });
+    });
+  },
+
+  renderizarProcessosCliente() {
+    if (!this.secaoProcessosCliente || !this.listaProcessosCliente) return;
+
+    const fluxos = FlowStore.listarFluxos(this.grupoSelecionado);
+    const clientes = this.grupoSelecionado && this.fluxoSelecionado
+      ? FlowStore.listarClientesDoFluxo(this.grupoSelecionado, this.fluxoSelecionado)
+        .filter((c) => c.id !== 'padrao')
+      : [];
+
+    if (!this.grupoSelecionado || !fluxos.length || !this.fluxoSelecionado || !clientes.length) {
+      this.secaoProcessosCliente.hidden = true;
+      this.listaProcessosCliente.innerHTML = '';
+      if (this.selectClienteProcessos) this.selectClienteProcessos.innerHTML = '';
+      return;
+    }
+
+    this.secaoProcessosCliente.hidden = false;
+
+    if (!this.clienteSelecionadoProcessos
+      || !clientes.some((c) => c.id === this.clienteSelecionadoProcessos)) {
+      this.clienteSelecionadoProcessos = clientes[0].id;
+    }
+
+    if (this.selectClienteProcessos) {
+      this.selectClienteProcessos.innerHTML = clientes.map((c) => `
+        <option value="${c.id}"${c.id === this.clienteSelecionadoProcessos ? ' selected' : ''}>${c.nome}</option>
+      `).join('');
+    }
+
+    const clienteId = this.clienteSelecionadoProcessos;
+    const cliente = clientes.find((c) => c.id === clienteId);
+    const titulo = this.secaoProcessosCliente.querySelector('#titulo-processos-cliente');
+    if (titulo) {
+      titulo.textContent = `Processos do cliente: ${cliente?.nome || ''}`;
+    }
+
+    const processos = FlowStore.listarProcessosDetalhados(
+      this.grupoSelecionado,
+      this.fluxoSelecionado,
+      clienteId,
+    );
+    const etapasCliente = FlowStore.getEtapasClienteParaVinculoDetalhe(clienteId);
+
+    if (!processos.length) {
+      this.listaProcessosCliente.innerHTML = `
+        <p class="capa-vazio">Nenhum processo do cliente ainda.
+        Abra o fluxo do cliente e <strong>clique em uma etapa exclusiva</strong> (ex.: CHECK EXTRA) para detalhar.</p>`;
+      return;
+    }
+
+    this.listaProcessosCliente.innerHTML = processos.map((p) => {
+      const vinculo = p.etapaMacroId
+        ? (NODES[p.etapaMacroId]?.label || p.etapaMacroId)
+        : 'Não vinculado';
+      const optsEtapa = [
+        '<option value="">— não vinculado —</option>',
+        ...etapasCliente.map((id) => {
+          const sel = p.etapaMacroId === id ? ' selected' : '';
+          return `<option value="${id}"${sel}>${NODES[id]?.label || id}</option>`;
+        }),
+      ].join('');
+
+      return `
+      <article class="capa-card capa-card--processo" data-processo="${p.id}">
+        <div class="capa-card__cor capa-card__cor--processo" aria-hidden="true"></div>
+        <div class="capa-card__corpo">
+          <h3 class="capa-card__titulo">${p.nome}</h3>
+          <p class="capa-card__descricao">${p.descricao || 'Sem descrição.'}</p>
+          <p class="capa-card__meta">${p.etapas} etapa(s) · vinculado: ${vinculo}</p>
+          <div class="capa-campo capa-campo--inline">
+            <label>Vincular ao passo do cliente</label>
+            <select class="input-select" data-vincular-processo-cliente="${p.id}" data-cliente-id="${clienteId}">${optsEtapa}</select>
+          </div>
+          <div class="capa-card__acoes">
+            <a href="${this.urlFluxo(clienteId, this.grupoSelecionado, this.fluxoSelecionado, p.id)}"
+              class="btn-acao btn-acao--primario">Abrir detalhe</a>
+            <button type="button" class="btn-acao btn-acao--danger-outline"
+              data-excluir-processo-cliente="${p.id}" data-cliente-id="${clienteId}">Excluir</button>
+          </div>
+        </div>
+      </article>`;
+    }).join('');
+
+    this.listaProcessosCliente.querySelectorAll('[data-vincular-processo-cliente]').forEach((sel) => {
+      sel.addEventListener('change', async () => {
+        const processoId = sel.dataset.vincularProcessoCliente;
+        const cid = sel.dataset.clienteId;
+        const etapaId = sel.value;
+        if (!etapaId) {
+          const atual = FlowStore.getEtapaVinculadaProcesso(
+            this.grupoSelecionado,
+            this.fluxoSelecionado,
+            processoId,
+            cid,
+          );
+          if (atual) {
+            FlowStore.desvincularProcessoDetalhado(
+              this.grupoSelecionado,
+              this.fluxoSelecionado,
+              atual,
+              cid,
+            );
+          }
+        } else {
+          const r = FlowStore.vincularProcessoDetalhado(
+            this.grupoSelecionado,
+            this.fluxoSelecionado,
+            etapaId,
+            processoId,
+            cid,
+          );
+          if (!r.ok) await avisar(r.erro || 'Não foi possível vincular.');
+        }
+        this.renderizarProcessosCliente();
+      });
+    });
+
+    this.listaProcessosCliente.querySelectorAll('[data-excluir-processo-cliente]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const processoId = btn.dataset.excluirProcessoCliente;
+        const cid = btn.dataset.clienteId;
+        const proc = processos.find((x) => x.id === processoId);
+        if (!(await confirmar(`Excluir o processo detalhado "${proc?.nome || processoId}"?`))) {
+          return;
+        }
+        FlowStore.removerProcessoDetalhado(
+          this.grupoSelecionado,
+          this.fluxoSelecionado,
+          processoId,
+          cid,
+        );
+        this.renderizarProcessosCliente();
+      });
+    });
   },
 
   renderizarClientes() {
@@ -688,7 +922,7 @@ const CapaApp = {
     this._cadastrandoCliente = false;
 
     const nomeExibicao = nome.trim().toUpperCase();
-    const abrir = await this.confirmarCapa(
+    const abrir = await confirmar(
       `Cliente "${nomeExibicao}" cadastrado. Deseja abrir o fluxo agora?`,
     );
     if (abrir) {
@@ -776,7 +1010,7 @@ const CapaApp = {
   async removerCliente(id) {
     const cliente = CLIENTES.find((c) => c.id === id);
     if (!cliente) return;
-    const confirmou = await this.confirmarCapa(
+    const confirmou = await confirmar(
       `Excluir o cliente "${cliente.nome}" e todas as customizações?`,
     );
     if (!confirmou) return;
@@ -796,6 +1030,8 @@ const CapaApp = {
       this.atualizarVisibilidadeGruposCliente();
     }
     this.renderizarFluxos();
+    this.renderizarProcessosMacro();
+    this.renderizarProcessosCliente();
     this.renderizarClientes();
   },
 };

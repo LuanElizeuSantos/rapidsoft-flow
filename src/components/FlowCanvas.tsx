@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -25,15 +25,18 @@ import EtapaNode from './nodes/EtapaNode';
 import FlexibleEdge from './edges/FlexibleEdge';
 import EdgeEditToolbar from './EdgeEditToolbar';
 import DiagramExportToolbar from './DiagramExportToolbar';
+import DetalheProcessoDialog from './DetalheProcessoDialog';
 import { buildFlowGraph, type FlowNodeData } from '../lib/buildFlowGraph';
 import {
   connectionToSerialized,
+  DEFAULT_MANUAL_EDGE_TYPE,
   inferHiddenAutoEdgeSemantics,
   makeCustomEdgeId,
   normalizeConnectionDirection,
   serializeEdge,
   type SerializedEdge,
 } from '../lib/diagramEdges';
+import { strokeLinhaManual } from '../lib/edgeColors';
 import { FlowStore } from '../../js/store.js';
 
 const nodeTypes = { etapa: EtapaNode } as const;
@@ -50,21 +53,66 @@ type Props = {
   clienteId: string;
   clienteCor?: string;
   tituloFluxo?: string;
+  onTrocarCliente?: (id: string) => void;
 };
 
-export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props) {
+export default function FlowCanvas({
+  clienteId,
+  clienteCor,
+  tituloFluxo,
+  onTrocarCliente,
+}: Props) {
   const built = useMemo(() => buildFlowGraph(clienteId), [clienteId]);
   const [nodes, setNodes] = useNodesState(built.nodes);
   const [edges, setEdges] = useEdgesState(built.edges);
   const connectOriginRef = useRef<string | null>(null);
-
-  const strokePadrao = clienteCor || '#64748b';
+  const [dialogEtapa, setDialogEtapa] = useState<{ id: string; label: string } | null>(null);
 
   useEffect(() => {
     const next = buildFlowGraph(clienteId);
     setNodes(next.nodes);
     setEdges(next.edges);
   }, [clienteId, setNodes, setEdges]);
+
+  useEffect(() => {
+    const handler = () => {
+      const next = buildFlowGraph(clienteId);
+      setNodes(next.nodes);
+      setEdges(next.edges);
+    };
+    window.addEventListener('consistem-flow-change', handler);
+    return () => window.removeEventListener('consistem-flow-change', handler);
+  }, [clienteId, setNodes, setEdges]);
+
+  const notificarMudanca = useCallback(() => {
+    window.dispatchEvent(new Event('consistem-flow-change'));
+  }, []);
+
+  const abrirProcessoDetalhe = useCallback((processoId: string, donoClienteId: string) => {
+    const grupoId = FlowStore.getGrupoAtivo();
+    const fluxoId = FlowStore.getFluxoAtivoId();
+    if (donoClienteId === 'padrao' && clienteId !== 'padrao') {
+      onTrocarCliente?.('padrao');
+    } else if (donoClienteId !== 'padrao' && clienteId !== donoClienteId) {
+      onTrocarCliente?.(donoClienteId);
+    }
+    FlowStore.carregarProcessoDetalhado(grupoId, fluxoId, processoId, donoClienteId);
+    const url = new URL(window.location.href);
+    url.searchParams.set('processo', processoId);
+    if (donoClienteId === 'padrao') {
+      url.searchParams.delete('cliente');
+    } else {
+      url.searchParams.set('cliente', donoClienteId);
+    }
+    window.history.pushState({}, '', url);
+    notificarMudanca();
+  }, [clienteId, notificarMudanca, onTrocarCliente]);
+
+  const onNodeClick = useCallback((_: unknown, node: Node<FlowNodeData>) => {
+    const data = node.data;
+    if (!data?.modoMacro || FlowStore.isModoProcessoDetalhado()) return;
+    setDialogEtapa({ id: node.id, label: data.label });
+  }, []);
 
   const persistir = useCallback(() => {
     FlowStore.persistirLayout(clienteId);
@@ -111,8 +159,6 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
-      if (clienteId === 'padrao') return;
-
       const normalized = normalizeConnectionDirection(connection, connectOriginRef.current);
       if (!normalized) return;
 
@@ -120,10 +166,12 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
       const target = normalized.target!;
       const semantics = inferHiddenAutoEdgeSemantics(clienteId, source, target);
       const id = makeCustomEdgeId(source, target);
-      const serialized = connectionToSerialized(normalized, id, strokePadrao, semantics);
+      const kind = semantics?.kind || 'custom';
+      const stroke = strokeLinhaManual(clienteId, clienteCor, kind);
+      const serialized = connectionToSerialized(normalized, id, stroke, semantics);
       FlowStore.addCustomEdge(clienteId, serialized);
 
-      const edgeType = semantics?.edgeType || 'flex';
+      const edgeType = semantics?.edgeType || DEFAULT_MANUAL_EDGE_TYPE;
       const edge: Edge = {
         id,
         source,
@@ -137,14 +185,14 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
         selectable: true,
         reconnectable: true,
         style: {
-          stroke: strokePadrao,
+          stroke,
           strokeWidth: 2,
           ...(semantics?.dashed ? { strokeDasharray: '7 4' } : {}),
         },
         labelStyle: semantics?.label
-          ? { fill: strokePadrao, fontWeight: 600, fontSize: 11 }
+          ? { fill: stroke, fontWeight: 600, fontSize: 11 }
           : undefined,
-        markerEnd: { type: 'arrowclosed', color: strokePadrao },
+        markerEnd: { type: 'arrowclosed', color: stroke },
         data: {
           kind: semantics?.kind || 'custom',
           userCreated: true,
@@ -155,7 +203,7 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
       setEdges((eds) => addEdge(edge, eds));
       persistir();
     },
-    [clienteId, persistir, setEdges, strokePadrao],
+    [clienteId, clienteCor, persistir, setEdges],
   );
 
   const onConnectStart = useCallback((_: unknown, params: { nodeId?: string | null }) => {
@@ -189,7 +237,7 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
   return (
     <div
       className="rf-canvas"
-      style={{ '--rf-cliente': strokePadrao } as React.CSSProperties}
+      style={{ '--rf-cliente': clienteCor || '#64748b' } as React.CSSProperties}
     >
       <ReactFlow
         nodes={nodes}
@@ -201,6 +249,7 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         onReconnect={onReconnect}
+        onNodeClick={onNodeClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         connectionMode={ConnectionMode.Loose}
@@ -212,7 +261,7 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
         minZoom={0.25}
         maxZoom={2}
         nodesDraggable
-        nodesConnectable={clienteId !== 'padrao'}
+        nodesConnectable
         edgesReconnectable
         elementsSelectable
         deleteKeyCode={['Backspace', 'Delete']}
@@ -242,6 +291,14 @@ export default function FlowCanvas({ clienteId, clienteCor, tituloFluxo }: Props
           maskColor="rgb(248 250 252 / 0.75)"
         />
       </ReactFlow>
+      <DetalheProcessoDialog
+        clienteId={clienteId}
+        etapaId={dialogEtapa?.id || null}
+        etapaLabel={dialogEtapa?.label || ''}
+        onClose={() => setDialogEtapa(null)}
+        onAbrirDetalhe={abrirProcessoDetalhe}
+        onChange={notificarMudanca}
+      />
     </div>
   );
 }

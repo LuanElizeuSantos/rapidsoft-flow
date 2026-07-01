@@ -70,7 +70,8 @@
 
         <div class="painel-box painel-box--add">
           <h4>Adicionar etapa</h4>
-          <div id="secao-ancora-etapa" class="painel-campo" hidden>
+          <p id="dica-primeira-etapa" class="painel-dica painel-dica--inline" hidden>Primeira etapa do fluxo — será criada no início. Depois disso você poderá escolher antes/depois de qualquer passo.</p>
+          <div id="secao-ancora-etapa" class="painel-campo">
             <label>Posição na sequência</label>
             <div class="painel-ancora-linha">
               <select id="select-ancora-tipo" class="input-select input-select--ancora-tipo">
@@ -79,6 +80,7 @@
               </select>
               <select id="select-ancora-ref" class="input-select"></select>
             </div>
+            <p class="painel-dica painel-dica--inline">Ex.: depois de TESTE 2 para criar TESTE 4 ligado a esse ramo.</p>
           </div>
           <div class="painel-campo">
             <label for="select-nova-etapa-tipo">Tipo</label>
@@ -92,11 +94,6 @@
             <input type="text" id="input-nova-etapa" class="input-texto" placeholder="Nome da etapa">
             <button type="button" class="btn-acao btn-acao--block" id="btn-criar-etapa">Criar etapa</button>
             <p class="painel-dica painel-dica--inline">Decisões entram na sequência; ligue SIM/NÃO depois, conforme adicionar mais etapas.</p>
-          </div>
-          <div class="painel-campo">
-            <label for="select-etapa">Inserir existente</label>
-            <select id="select-etapa" class="input-select"></select>
-            <button type="button" class="btn-acao btn-acao--block" id="btn-inserir-etapa">Inserir</button>
           </div>
         </div>
       </div>
@@ -200,7 +197,7 @@
     <footer class="painel-footer">
       <button type="button" class="btn-acao btn-acao--primario btn-acao--block" id="btn-salvar">Salvar no navegador</button>
       <button type="button" class="btn-acao btn-acao--block" id="btn-exportar">Exportar JSON</button>
-      <button type="button" class="btn-acao btn-acao--block btn-acao--danger-outline" id="btn-resetar">Restaurar padrão</button>
+      <button type="button" class="btn-acao btn-acao--block btn-acao--danger-outline" id="btn-resetar" hidden>Restaurar padrão</button>
     </footer>
   </aside>
 
@@ -215,6 +212,16 @@
         <button type="submit" class="btn-acao btn-acao--primario">Confirmar</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="dialog-confirm" class="ui-dialog">
+    <div class="ui-dialog__form">
+      <p id="dialog-confirm-mensagem" class="ui-dialog__mensagem"></p>
+      <div class="ui-dialog__acoes">
+        <button type="button" class="btn-acao" id="btn-confirm-nao">Cancelar</button>
+        <button type="button" class="btn-acao btn-acao--danger-outline" id="btn-confirm-sim">Confirmar</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="dialog-aviso" class="ui-dialog">

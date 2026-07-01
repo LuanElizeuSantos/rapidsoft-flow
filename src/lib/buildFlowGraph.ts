@@ -3,6 +3,7 @@ import { FlowStore } from '../../js/store.js';
 import { FlowEngine } from '../../js/engine.js';
 import { NODES } from '../../js/nodes.js';
 import { applyEdgeLayout } from './diagramEdges';
+import { strokeArestaAutomatica } from './edgeColors';
 
 type NodeDef = {
   id?: string;
@@ -23,6 +24,8 @@ export type FlowNodeData = {
   variant: 'processo' | 'decisao' | 'decisao-cliente' | 'cliente' | 'bypass';
   comentario?: string;
   codigoRotina?: string;
+  temDetalhe?: boolean;
+  modoMacro?: boolean;
 };
 
 type EdgeKind = 'seq' | 'nao' | 'sim' | 'ref-nao' | 'ref-sim' | 'volta' | 'salto' | 'entrada';
@@ -51,22 +54,22 @@ function handlesForKind(
   }
 }
 
-function alvoFicaNaLinhaPrincipal(clienteId: string, alvoId: string, sequencia: string[]) {
-  if (!alvoId || clienteId === 'padrao') return false;
+function alvoFicaNaLinhaPrincipal(clienteGrafo: string, alvoId: string, sequencia: string[]) {
+  if (!alvoId || clienteGrafo === 'padrao') return false;
   if (!FlowStore.isEtapaBase(alvoId)) return false;
   if (!sequencia.includes(alvoId)) return false;
-  if (FlowStore.getPassosEmSubfluxos(clienteId).includes(alvoId)) return false;
+  if (FlowStore.getPassosEmSubfluxos(clienteGrafo).includes(alvoId)) return false;
   return true;
 }
 
-function nodeVariant(noId: string, clienteId: string): FlowNodeData['variant'] {
+function nodeVariant(noId: string, clienteGrafo: string): FlowNodeData['variant'] {
   const no = nodesMap[noId];
-  const ehDecisao = no?.tipo === 'decisao' || FlowEngine.isNoDecisao(noId, clienteId);
+  const ehDecisao = no?.tipo === 'decisao' || FlowEngine.isNoDecisao(noId, clienteGrafo);
   if (ehDecisao) {
-    return FlowEngine.isDecisaoDoCliente(noId, clienteId) ? 'decisao-cliente' : 'decisao';
+    return FlowEngine.isDecisaoDoCliente(noId, clienteGrafo) ? 'decisao-cliente' : 'decisao';
   }
-  if (FlowEngine.isEtapaDoCliente(noId, clienteId)) return 'cliente';
-  if (FlowEngine.isEtapaBypassVisual(noId, clienteId)) {
+  if (FlowEngine.isEtapaDoCliente(noId, clienteGrafo)) return 'cliente';
+  if (FlowEngine.isEtapaBypassVisual(noId, clienteGrafo)) {
     return 'bypass';
   }
   return 'processo';
@@ -76,11 +79,17 @@ function makeNode(
   id: string,
   col: number,
   row: number,
-  clienteId: string,
+  clienteGrafo: string,
   saved: Record<string, { x: number; y: number }>,
 ): Node<FlowNodeData> {
   const no = nodesMap[id];
   const savedPos = saved[id];
+  const gid = FlowStore.getGrupoAtivo();
+  const fid = FlowStore.getFluxoAtivoId();
+  const modoMacro = !FlowStore.isModoProcessoDetalhado();
+  const temDetalhe = modoMacro && Boolean(
+    gid && FlowStore.temProcessoDetalhadoVinculado(gid, fid, id, clienteGrafo),
+  );
   return {
     id,
     type: 'etapa',
@@ -91,9 +100,11 @@ function makeNode(
     data: {
       nodeId: id,
       label: no?.label || id,
-      variant: nodeVariant(id, clienteId),
+      variant: nodeVariant(id, clienteGrafo),
       comentario: no?.comentario || undefined,
       codigoRotina: no?.codigoRotina || undefined,
+      temDetalhe,
+      modoMacro,
     },
     draggable: true,
   };
@@ -105,7 +116,7 @@ function edgeId(de: string, para: string, kind: string) {
 
 function temPuladasEntreSequencia(
   sequencia: string[],
-  clienteId: string,
+  clienteGrafo: string,
   de: string,
   para: string,
 ) {
@@ -113,47 +124,186 @@ function temPuladasEntreSequencia(
   const iPara = sequencia.indexOf(para);
   if (iDe < 0 || iPara <= iDe) return false;
   for (let i = iDe + 1; i < iPara; i += 1) {
-    if (FlowEngine.isEtapaPulada(sequencia[i], clienteId)) return true;
+    if (FlowEngine.isEtapaPulada(sequencia[i], clienteGrafo)) return true;
   }
   return false;
 }
 
-function temSaltoDireto(clienteId: string, de: string, para: string) {
-  return FlowStore.getLigacoes(clienteId).some(
+function coletarNosForaLinha(clienteGrafo: string, sequencia: string[]) {
+  const fora = new Set<string>();
+  FlowStore.getDecisoes(clienteGrafo).forEach((d) => {
+    if (d.sim && !alvoFicaNaLinhaPrincipal(clienteGrafo, d.sim, sequencia)) fora.add(d.sim);
+    if (d.nao && !alvoFicaNaLinhaPrincipal(clienteGrafo, d.nao, sequencia)) fora.add(d.nao);
+
+    const iSim = d.sim ? sequencia.indexOf(d.sim) : -1;
+    const iNao = d.nao ? sequencia.indexOf(d.nao) : -1;
+    // Cadeia SIM→…→antes do NÃO na sequência = ramo vertical (padrão e cliente).
+    if (iSim >= 0 && iNao > iSim) {
+      for (let i = iSim; i < iNao; i += 1) {
+        fora.add(sequencia[i]);
+      }
+    }
+  });
+  FlowStore.getPassosEmSubfluxos(clienteGrafo).forEach((id) => {
+    if (!alvoFicaNaLinhaPrincipal(clienteGrafo, id, sequencia)) fora.add(id);
+  });
+  return fora;
+}
+
+/** Etapas encadeadas no ramo SIM (sequência após a decisão, exceto alvo do NÃO). */
+function coletarCadeiaRamoSim(
+  clienteGrafo: string,
+  decisaoId: string,
+  sequencia: string[],
+  nosForaLinha: Set<string>,
+): string[] {
+  const dec = FlowEngine.getDecisao(clienteGrafo, decisaoId);
+  if (!dec?.sim) return [];
+  const iDec = sequencia.indexOf(decisaoId);
+  const iSim = sequencia.indexOf(dec.sim);
+  if (iSim < 0) return [];
+
+  const cadeia: string[] = [];
+  for (let i = iSim; i < sequencia.length; i += 1) {
+    const id = sequencia[i];
+    if (id === dec.nao) continue;
+    const ehDecisao = FlowEngine.isNoDecisao(id, clienteGrafo);
+    const fora = nosForaLinha.has(id);
+    if (id === dec.sim || fora || (ehDecisao && i > iDec)) {
+      cadeia.push(id);
+      continue;
+    }
+    if (!fora && !ehDecisao && cadeia.length > 0) break;
+  }
+  return cadeia;
+}
+
+function temSaltoDireto(clienteGrafo: string, de: string, para: string) {
+  return FlowStore.getLigacoes(clienteGrafo).some(
     (l) => l.tipo === 'salto' && l.de === de && l.para === para,
   );
 }
 
-export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
-  FlowStore.garantirDecisoesNoFluxo(clienteId);
+function deveOmitirArestaSequencia(
+  de: string | null,
+  para: string,
+  clienteGrafo: string,
+  nosForaLinha: Set<string>,
+) {
+  if (!de) return true;
+  if (nosForaLinha.has(de) || nosForaLinha.has(para)) return true;
+  if (FlowEngine.isNoDecisao(de, clienteGrafo)) return true;
+  return false;
+}
 
-  const sequencia = FlowEngine.resolverSequencia(clienteId);
+/** Próximo passo na linha principal após índice (pula ramos verticais / subfluxos). */
+function proximoPassoNaLinhaPrincipal(
+  sequencia: string[],
+  idx: number,
+  nosForaLinha: Set<string>,
+  processadosRamo: Set<string>,
+  clienteGrafo: string,
+): string | null {
+  for (let j = idx + 1; j < sequencia.length; j += 1) {
+    const id = sequencia[j];
+    if (nosForaLinha.has(id) || processadosRamo.has(id)) continue;
+    if (FlowEngine.isNoDecisao(id, clienteGrafo)) return null;
+    return id;
+  }
+  return null;
+}
+
+export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
+  const clienteGrafo = FlowStore.isModoProcessoDetalhado() ? 'padrao' : clienteId;
+
+  if (FlowStore.garantirDecisoesNoFluxo(clienteGrafo)) {
+    FlowStore.persistir();
+  }
+
+  const sequencia = FlowEngine.resolverSequencia(clienteGrafo);
   const prefixo = FlowStore.getPrefixoFixo();
   const fork = FlowStore.getCreditFork();
   const mergeId = fork?.mergeEm || null;
   const posCredito = mergeId ? sequencia.filter((id: string) => id !== mergeId) : [...sequencia];
-  const saved = FlowStore.getNodePositions(clienteId);
+  const saved = FlowStore.getNodePositions(clienteGrafo);
 
   const nodes: Node<FlowNodeData>[] = [];
   const edges: Edge[] = [];
+  const rowMain = 0;
   const placed = new Set<string>();
-  const nosForaLinha = new Set<string>();
+  const nodeRow = new Map<string, number>();
+  const nosForaLinha = coletarNosForaLinha(clienteGrafo, sequencia);
+  const processadosRamo = new Set<string>();
 
-  FlowStore.getDecisoes(clienteId).forEach((d) => {
-    if (d.sim && !alvoFicaNaLinhaPrincipal(clienteId, d.sim, sequencia)) {
-      nosForaLinha.add(d.sim);
-    }
-  });
-  FlowStore.getPassosEmSubfluxos(clienteId).forEach((id) => {
-    if (!alvoFicaNaLinhaPrincipal(clienteId, id, sequencia)) {
-      nosForaLinha.add(id);
-    }
-  });
+  const isNaLinhaPrincipal = (id: string) => nodeRow.get(id) === rowMain;
 
   const addNode = (id: string, col: number, row: number) => {
     if (placed.has(id)) return;
     placed.add(id);
-    nodes.push(makeNode(id, col, row, clienteId, saved));
+    nodeRow.set(id, row);
+    nodes.push(makeNode(id, col, row, clienteGrafo, saved));
+  };
+
+  const ligarAlvoDecisao = (
+    origemId: string,
+    alvoId: string,
+    ramo: 'sim' | 'nao',
+    col: number,
+    rowOrigem: number,
+  ) => {
+    if (!alvoId) return;
+    const label = ramo === 'sim' ? 'SIM' : 'NÃO';
+    const direto = ramo === 'sim' ? 'sim' : 'nao';
+    const ref = ramo === 'sim' ? 'ref-sim' : 'ref-nao';
+    if (!placed.has(alvoId)) {
+      const rowAlvo = ramo === 'sim' ? rowOrigem + 1 : rowMain;
+      const colAlvo = ramo === 'sim' ? col : col + 1;
+      addNode(alvoId, colAlvo, rowAlvo);
+      addEdge(origemId, alvoId, direto, label, { vertical: ramo === 'sim' });
+      return;
+    }
+    if (isNaLinhaPrincipal(alvoId)) {
+      addEdge(origemId, alvoId, ref, label);
+    } else {
+      addEdge(origemId, alvoId, direto, label, { vertical: ramo === 'sim' });
+    }
+  };
+
+  const layoutRamosDecisao = (decisaoId: string, col: number, row: number) => {
+    const dec = FlowEngine.getDecisao(clienteGrafo, decisaoId);
+    if (!dec) return;
+    ligarAlvoDecisao(decisaoId, dec.nao, 'nao', col, row);
+    const cadeia = coletarCadeiaRamoSim(clienteGrafo, decisaoId, posCredito, nosForaLinha);
+    if (!cadeia.length) {
+      ligarAlvoDecisao(decisaoId, dec.sim, 'sim', col, row);
+      return;
+    }
+
+    let prev = decisaoId;
+    let r = row + 1;
+    cadeia.forEach((id, idx) => {
+      processadosRamo.add(id);
+      if (FlowEngine.isNoDecisao(id, clienteGrafo)) {
+        if (!placed.has(id)) addNode(id, col, r);
+        if (prev !== id) {
+          addEdge(prev, id, 'seq', undefined, { vertical: true });
+        } else if (idx === 0) {
+          ligarAlvoDecisao(decisaoId, id, 'sim', col, row);
+        }
+        layoutRamosDecisao(id, col, r);
+        prev = id;
+        r += 2;
+        return;
+      }
+      if (!placed.has(id)) addNode(id, col, r);
+      if (idx === 0) {
+        ligarAlvoDecisao(decisaoId, id, 'sim', col, row);
+      } else {
+        addEdge(prev, id, 'seq', undefined, { vertical: true });
+      }
+      prev = id;
+      r += 1;
+    });
   };
 
   const addEdge = (
@@ -166,11 +316,7 @@ export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]
     const id = edgeId(de, para, kind);
     if (edges.some((e) => e.id === id)) return;
 
-    let stroke = '#64748b';
-    if (kind === 'nao' || kind === 'ref-nao') stroke = '#b45309';
-    if (kind === 'salto' || kind === 'volta' || kind === 'ref-sim' || kind === 'sim' || kind === 'entrada') {
-      stroke = opts.cliente && clienteId !== 'padrao' ? 'var(--rf-cliente)' : '#64748b';
-    }
+    let stroke = strokeArestaAutomatica(clienteGrafo, kind, opts);
 
     const { sourceHandle, targetHandle } = handlesForKind(kind, opts);
 
@@ -195,7 +341,6 @@ export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]
   };
 
   let col = 0;
-  const rowMain = 0;
 
   prefixo.forEach((id, i) => {
     addNode(id, col, rowMain);
@@ -216,7 +361,7 @@ export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]
 
   const layoutSubfluxo = (sub: { de: string; passos: string[]; para: string | null }, anchorCol: number, startRow: number) => {
     const visitados = new Set<string>();
-    const destaqueSub = FlowStore.isSubfluxoDoCliente(clienteId, sub.de);
+    const destaqueSub = FlowStore.isSubfluxoDoCliente(clienteGrafo, sub.de);
 
     const percorrer = (passos: string[], r: number, cInicio: number, destaque = destaqueSub) => {
       let c = cInicio;
@@ -226,18 +371,18 @@ export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]
         visitados.add(pid);
 
         const prev = i > 0 ? passos[i - 1] : null;
-        if (prev && placed.has(prev) && !FlowEngine.isNoDecisao(prev, clienteId)) {
+        if (prev && placed.has(prev) && !FlowEngine.isNoDecisao(prev, clienteGrafo)) {
           addEdge(prev, pid, 'seq', undefined, { cliente: destaque, vertical: true });
         }
 
-        if (FlowEngine.isNoDecisao(pid, clienteId)) {
+        if (FlowEngine.isNoDecisao(pid, clienteGrafo)) {
           addNode(pid, c, r);
-          const dec = FlowEngine.getDecisao(clienteId, pid);
+          const dec = FlowEngine.getDecisao(clienteGrafo, pid);
 
           if (dec?.nao) {
             const naoIgualVolta = sub.para && dec.nao === sub.para;
             if (!naoIgualVolta) {
-              if (alvoFicaNaLinhaPrincipal(clienteId, dec.nao, sequencia) || placed.has(dec.nao)) {
+              if (alvoFicaNaLinhaPrincipal(clienteGrafo, dec.nao, sequencia) || placed.has(dec.nao)) {
                 addEdge(pid, dec.nao, 'ref-nao', 'NÃO', { cliente: destaque });
               } else if (!sub.passos.includes(dec.nao)) {
                 addNode(dec.nao, c + 1, r);
@@ -247,12 +392,12 @@ export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]
           }
 
           if (dec?.sim) {
-            if (alvoFicaNaLinhaPrincipal(clienteId, dec.sim, sequencia) || placed.has(dec.sim)) {
+            if (alvoFicaNaLinhaPrincipal(clienteGrafo, dec.sim, sequencia) || placed.has(dec.sim)) {
               addEdge(pid, dec.sim, 'ref-sim', 'SIM', { cliente: destaque });
             } else {
-              const nested = FlowStore.getSubfluxoDe(clienteId, dec.sim);
+              const nested = FlowStore.getSubfluxoDe(clienteGrafo, dec.sim);
               if (nested) {
-                const destaqueNested = FlowStore.isSubfluxoDoCliente(clienteId, nested.de);
+                const destaqueNested = FlowStore.isSubfluxoDoCliente(clienteGrafo, nested.de);
                 percorrer(nested.passos, r + 1, c, destaqueNested);
               } else {
                 addNode(dec.sim, c, r + 1);
@@ -264,10 +409,10 @@ export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]
           }
           c += 2;
         } else {
-          const nested = FlowStore.getSubfluxoDe(clienteId, pid);
+          const nested = FlowStore.getSubfluxoDe(clienteGrafo, pid);
           if (nested) {
             addNode(pid, c, r);
-            const destaqueNested = FlowStore.isSubfluxoDoCliente(clienteId, nested.de);
+            const destaqueNested = FlowStore.isSubfluxoDoCliente(clienteGrafo, nested.de);
             percorrer(nested.passos, r + 1, c, destaqueNested);
           } else {
             addNode(pid, c, r);
@@ -285,16 +430,16 @@ export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]
   };
 
   const addSubfluxoVoltaEdges = () => {
-    FlowStore.getSubfluxos(clienteId).forEach((sub) => {
+    FlowStore.getSubfluxos(clienteGrafo).forEach((sub) => {
       if (!sub.para || !sub.passos?.length) return;
 
       const ultimo = sub.passos[sub.passos.length - 1];
       if (!ultimo || !placed.has(ultimo) || !placed.has(sub.para)) return;
 
-      const destaqueSub = FlowStore.isSubfluxoDoCliente(clienteId, sub.de);
-      const ultimoEhDecisao = FlowEngine.isNoDecisao(ultimo, clienteId);
+      const destaqueSub = FlowStore.isSubfluxoDoCliente(clienteGrafo, sub.de);
+      const ultimoEhDecisao = FlowEngine.isNoDecisao(ultimo, clienteGrafo);
       if (ultimoEhDecisao) {
-        const dec = FlowEngine.getDecisao(clienteId, ultimo);
+        const dec = FlowEngine.getDecisao(clienteGrafo, ultimo);
         const destinoNao = dec?.nao ?? sub.para;
         if (destinoNao === sub.para) {
           addEdge(
@@ -313,46 +458,43 @@ export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]
 
   const primeiroAnterior = mergeId || prefixo[prefixo.length - 1] || null;
 
-  posCredito.forEach((noId: string, idx: number) => {
-    if (placed.has(noId) || nosForaLinha.has(noId)) return;
-
-    const anteriorSeq = idx > 0 ? posCredito[idx - 1] : primeiroAnterior;
-    if (anteriorSeq) {
-      const pulaNoMeio = temPuladasEntreSequencia(sequencia, clienteId, anteriorSeq, noId);
-      const saltoDireto = temSaltoDireto(clienteId, anteriorSeq, noId);
+  const tentarArestaSequencial = (de: string, para: string) => {
+    if (!deveOmitirArestaSequencia(de, para, clienteGrafo, nosForaLinha)) {
+      const pulaNoMeio = temPuladasEntreSequencia(sequencia, clienteGrafo, de, para);
+      const saltoDireto = temSaltoDireto(clienteGrafo, de, para);
       if (!(pulaNoMeio && saltoDireto)) {
-        addEdge(anteriorSeq, noId, 'seq');
+        addEdge(de, para, 'seq');
       }
     }
+  };
 
-    const sub = FlowStore.getSubfluxoDe(clienteId, noId);
+  posCredito.forEach((noId: string, idx: number) => {
+    if (nosForaLinha.has(noId) || processadosRamo.has(noId)) return;
+
+    if (placed.has(noId)) {
+      // Alvo do NÃO na linha principal já posicionado por ref-nao — ainda encadear seq → próximo.
+      const proximo = proximoPassoNaLinhaPrincipal(
+        posCredito,
+        idx,
+        nosForaLinha,
+        processadosRamo,
+        clienteGrafo,
+      );
+      if (proximo) tentarArestaSequencial(noId, proximo);
+      return;
+    }
+
+    const anteriorSeq = idx > 0 ? posCredito[idx - 1] : primeiroAnterior;
+    if (anteriorSeq) tentarArestaSequencial(anteriorSeq, noId);
+
+    const sub = FlowStore.getSubfluxoDe(clienteGrafo, noId);
     if (sub) {
       addNode(noId, col, rowMain);
       layoutSubfluxo(sub, col, 1);
       col += 1;
-    } else if (FlowEngine.isNoDecisao(noId, clienteId)) {
+    } else if (FlowEngine.isNoDecisao(noId, clienteGrafo)) {
       addNode(noId, col, rowMain);
-      const dec = FlowEngine.getDecisao(clienteId, noId);
-      if (dec?.nao) {
-        if (alvoFicaNaLinhaPrincipal(clienteId, dec.nao, sequencia) || placed.has(dec.nao)) {
-          addEdge(noId, dec.nao, 'ref-nao', 'NÃO');
-        } else if (!nosForaLinha.has(dec.nao)) {
-          addNode(dec.nao, col + 1, rowMain);
-          addEdge(noId, dec.nao, 'nao', 'NÃO');
-        }
-      }
-      if (dec?.sim) {
-        if (alvoFicaNaLinhaPrincipal(clienteId, dec.sim, sequencia) || placed.has(dec.sim)) {
-          addEdge(noId, dec.sim, 'ref-sim', 'SIM');
-        } else if (!placed.has(dec.sim)) {
-          const simSub = FlowStore.getSubfluxoDe(clienteId, dec.sim);
-          if (simSub) layoutSubfluxo(simSub, col, 1);
-          else {
-            addNode(dec.sim, col, 1);
-            addEdge(noId, dec.sim, 'sim', 'SIM');
-          }
-        }
-      }
+      layoutRamosDecisao(noId, col, rowMain);
       col += 2;
     } else {
       addNode(noId, col, rowMain);
@@ -360,16 +502,16 @@ export function buildFlowGraph(clienteId: string): { nodes: Node<FlowNodeData>[]
     }
   });
 
-  FlowStore.getLigacoes(clienteId)
+  FlowStore.getLigacoes(clienteGrafo)
     .filter((l) => l.tipo === 'salto')
     .forEach((l) => {
       if (placed.has(l.de) && placed.has(l.para)) {
-        const destaque = FlowStore.isLigacaoDoCliente(clienteId, l.de);
+        const destaque = FlowStore.isLigacaoDoCliente(clienteGrafo, l.de);
         addEdge(l.de, l.para, 'salto', l.rotulo || 'gatilho', { cliente: destaque });
       }
     });
 
   addSubfluxoVoltaEdges();
 
-  return { nodes, edges: applyEdgeLayout(clienteId, edges) };
+  return { nodes, edges: applyEdgeLayout(clienteGrafo, edges) };
 }

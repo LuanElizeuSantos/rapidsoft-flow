@@ -23,17 +23,28 @@ function getFluxoFromUrl(): string | null {
   return p || null;
 }
 
+function getProcessoFromUrl(): string | null {
+  const p = new URLSearchParams(window.location.search).get('processo');
+  return p || null;
+}
+
 function resolveGrupoInicial(): string | null {
   const urlGrupo = getGrupoFromUrl();
   const urlFluxo = getFluxoFromUrl();
+  const urlProcesso = getProcessoFromUrl();
+  const urlCliente = getClienteFromUrl();
   const grupoId = urlGrupo || GRUPOS[0]?.id || null;
-  FlowStore.carregarGrupo(grupoId, urlFluxo || undefined);
+  const donoProcesso = urlProcesso
+    ? FlowStore.resolveDonoProcessoDetalhado(grupoId, urlFluxo || undefined, urlProcesso, urlCliente)
+  : null;
+  FlowStore.carregarGrupo(grupoId, urlFluxo || undefined, urlProcesso ?? undefined, donoProcesso);
   return grupoId;
 }
 
 export default function App() {
   const [grupoId, setGrupoId] = useState<string | null>(resolveGrupoInicial);
   const [fluxoId, setFluxoId] = useState(() => FlowStore.getFluxoAtivoId());
+  const [processoId, setProcessoId] = useState(() => FlowStore.getProcessoAtivoId());
   const [clienteId, setClienteId] = useState(getClienteFromUrl);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -52,7 +63,7 @@ export default function App() {
       vistos.add(c.id);
       return true;
     });
-  }, [grupoId, fluxoId, refreshKey]);
+  }, [grupoId, fluxoId, processoId, refreshKey]);
 
   const meta = useMemo(() => FlowEngine.resolverMetadados(clienteId), [clienteId, refreshKey]);
   const cores = useMemo(() => FlowStore.getCoresCliente(clienteId), [clienteId, refreshKey]);
@@ -62,10 +73,16 @@ export default function App() {
   useEffect(() => {
     const grupoParam = getGrupoFromUrl();
     const fluxoParam = getFluxoFromUrl();
+    const processoParam = getProcessoFromUrl();
+    const clienteParam = getClienteFromUrl();
     const ativo = grupoParam || GRUPOS[0]?.id || null;
-    FlowStore.carregarGrupo(ativo, fluxoParam || undefined);
+    const donoProcesso = processoParam
+      ? FlowStore.resolveDonoProcessoDetalhado(ativo, fluxoParam || undefined, processoParam, clienteParam)
+      : null;
+    FlowStore.carregarGrupo(ativo, fluxoParam || undefined, processoParam ?? undefined, donoProcesso);
     setGrupoId(ativo);
     setFluxoId(FlowStore.getFluxoAtivoId());
+    setProcessoId(FlowStore.getProcessoAtivoId());
 
     const grupoLabel = document.getElementById('fluxo-grupo-label');
     if (grupoLabel) {
@@ -99,7 +116,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handler = () => setRefreshKey((k) => k + 1);
+    const handler = () => {
+      setRefreshKey((k) => k + 1);
+      setProcessoId(FlowStore.getProcessoAtivoId());
+    };
     window.addEventListener('consistem-flow-change', handler);
     return () => window.removeEventListener('consistem-flow-change', handler);
   }, []);
@@ -123,6 +143,18 @@ export default function App() {
       if (window.FlowEditor.aberto) window.FlowEditor.renderizar();
     }
   }, [clienteId, cores]);
+
+  const voltarMacro = () => {
+    FlowStore.voltarParaMacro();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('processo');
+    window.history.replaceState({}, '', url);
+    setProcessoId(null);
+    setRefreshKey((k) => k + 1);
+    window.dispatchEvent(new Event('consistem-flow-change'));
+  };
+
+  const emDetalhe = Boolean(processoId);
 
   const trocarCliente = (id: string) => {
     setClienteId(id);
@@ -162,6 +194,11 @@ export default function App() {
 
       <div className="fluxo-info">
         <div className="fluxo-info__texto">
+          {emDetalhe && (
+            <button type="button" className="btn-acao btn-acao--sm fluxo-info__voltar" onClick={voltarMacro}>
+              ← Voltar ao fluxo macro
+            </button>
+          )}
           <h2 id="fluxo-titulo">{semFluxo ? `${grupo?.nome || ''} — sem fluxo` : meta.titulo}</h2>
           <p id="fluxo-descricao">{semFluxo ? 'Cadastre o fluxo na capa.' : meta.descricao}</p>
         </div>
@@ -174,7 +211,9 @@ export default function App() {
         </div>
         {!semFluxo && (
           <p className="fluxo-info__dica-diagrama">
-            Arraste das bolinhas para criar setas · Ocultar ≠ excluir (recuperável no diagrama) · Baixar PNG ou Mermaid no canto do diagrama
+            {emDetalhe
+              ? 'Processo detalhado — edite as etapas internas deste passo do macro.'
+              : 'Clique em uma etapa para detalhar · Arraste das bolinhas para criar setas · Baixar PNG ou Mermaid no canto'}
           </p>
         )}
       </div>
@@ -188,6 +227,7 @@ export default function App() {
             clienteId={clienteId}
             clienteCor={cores?.cor}
             tituloFluxo={meta.titulo}
+            onTrocarCliente={trocarCliente}
           />
         )}
       </section>

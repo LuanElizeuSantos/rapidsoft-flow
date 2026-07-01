@@ -1,5 +1,9 @@
 import type { Connection, Edge, MarkerType } from '@xyflow/react';
 import { FlowStore } from '../../js/store.js';
+import {
+  normalizarStrokeEdgePadrao,
+  STROKE_NEUTRO,
+} from './edgeColors';
 
 export type SerializedEdge = {
   id: string;
@@ -18,6 +22,9 @@ export type SerializedEdge = {
 
 const DASH = '7 4';
 
+/** Tipo padrão ao criar seta manual (arrastar entre nós). */
+export const DEFAULT_MANUAL_EDGE_TYPE = 'smoothstep';
+
 function isDashedStyle(style: Edge['style']): boolean {
   if (!style || typeof style !== 'object' || !('strokeDasharray' in style)) return false;
   return Boolean(style.strokeDasharray);
@@ -28,7 +35,7 @@ function strokeFromEdge(edge: Edge): string {
   if (s && typeof s === 'object' && 'stroke' in s && typeof s.stroke === 'string') {
     return s.stroke;
   }
-  return '#64748b';
+  return STROKE_NEUTRO;
 }
 
 export function buildEdgeStyle(stroke: string, dashed?: boolean) {
@@ -57,29 +64,51 @@ export function serializeEdge(edge: Edge): SerializedEdge {
   };
 }
 
-export function deserializeEdge(item: SerializedEdge): Edge {
-  const stroke = item.stroke || '#64748b';
+function aplicarStrokeEdge(edge: Edge, stroke: string, dashed: boolean): Edge {
+  return {
+    ...edge,
+    style: buildEdgeStyle(stroke, dashed),
+    labelStyle: { fill: stroke, fontWeight: 600, fontSize: 11 },
+    markerEnd: { type: 'arrowclosed' as MarkerType, color: stroke },
+  };
+}
+
+export function deserializeEdge(
+  item: SerializedEdge,
+  clienteId?: string,
+  opts: { herdadaDoPadrao?: boolean } = {},
+): Edge {
+  const kind = item.kind || 'custom';
+  const strokeBase = item.stroke || STROKE_NEUTRO;
+  const herdada = opts.herdadaDoPadrao === true;
+  const stroke = clienteId === 'padrao' || herdada
+    ? normalizarStrokeEdgePadrao({ data: { kind } })
+    : strokeBase;
   const dashed = Boolean(item.dashed);
+  const edgeType = item.type || (item.waypoint ? 'flex' : DEFAULT_MANUAL_EDGE_TYPE);
   return {
     id: item.id,
     source: item.source,
     target: item.target,
     sourceHandle: item.sourceHandle ?? undefined,
     targetHandle: item.targetHandle ?? undefined,
-    type: item.type || 'default',
-    label: item.label,
+    type: edgeType,
+    label: item.label || undefined,
     labelShowBg: true,
     animated: item.animated,
     selectable: true,
     reconnectable: true,
     focusable: true,
     style: buildEdgeStyle(stroke, dashed),
-    labelStyle: { fill: stroke, fontWeight: 600, fontSize: 11 },
+    labelStyle: item.label
+      ? { fill: stroke, fontWeight: 600, fontSize: 11 }
+      : undefined,
     labelBgStyle: { fill: '#fff', fillOpacity: 0.92 },
     markerEnd: { type: 'arrowclosed' as MarkerType, color: stroke },
     data: {
       kind: item.kind || 'custom',
       userCreated: true,
+      herdadaDoPadrao: herdada,
       waypoint: item.waypoint,
     },
   };
@@ -131,9 +160,17 @@ function sanitizeOverride(edge: Edge, ov: Record<string, unknown>): Record<strin
 }
 
 export function applyEdgeLayout(clienteId: string, edges: Edge[]): Edge[] {
-  const layout = FlowStore.getEdgeLayout(clienteId);
+  const layout = FlowStore.getMergedEdgeLayout(clienteId);
   const removed = new Set(layout.removed || []);
   const overrides = layout.overrides || {};
+
+  const normalizarPadrao = (e: Edge): Edge => {
+    if (clienteId !== 'padrao') return e;
+    const kind = (e.data as { kind?: string } | undefined)?.kind;
+    const stroke = normalizarStrokeEdgePadrao({ data: { kind } });
+    const dashed = isDashedStyle(e.style);
+    return aplicarStrokeEdge(e, stroke, dashed);
+  };
 
   const merged = edges
     .filter((e) => !removed.has(e.id))
@@ -141,18 +178,33 @@ export function applyEdgeLayout(clienteId: string, edges: Edge[]): Edge[] {
       const raw = overrides[e.id];
       const ov = raw ? sanitizeOverride(e, raw) : undefined;
       const base = ov ? applyOverride(e, ov) : { ...e, labelShowBg: true };
-      return {
+      return normalizarPadrao({
         ...base,
         selectable: true,
         reconnectable: true,
         focusable: true,
-      };
+      });
     });
 
   const autoPairs = new Set(merged.map((e) => `${e.source}:${e.target}`));
   const custom = (layout.custom || [])
-    .map((item: SerializedEdge) => deserializeEdge(item))
-    .filter((e: Edge) => !autoPairs.has(`${e.source}:${e.target}`));
+    .map((item: SerializedEdge) => {
+      const ov = overrides[item.id];
+      const mergedItem = ov
+        ? {
+          ...item,
+          ...ov,
+          type: (ov.type as string) || item.type,
+          label: ov.label !== undefined ? (ov.label as string) : item.label,
+          dashed: ov.dashed !== undefined ? Boolean(ov.dashed) : Boolean(item.dashed),
+        }
+        : item;
+      const herdada = clienteId !== 'padrao'
+        && FlowStore.isCustomEdgeHerdadaDoPadrao(clienteId, item.id);
+      return deserializeEdge(mergedItem, clienteId, { herdadaDoPadrao: herdada });
+    })
+    .filter((e: Edge) => !autoPairs.has(`${e.source}:${e.target}`))
+    .map(normalizarPadrao);
   return [...merged, ...custom];
 }
 
@@ -197,7 +249,7 @@ export function inferHiddenAutoEdgeSemantics(
     if (kind === 'seq') {
       return { kind, edgeType: 'default' };
     }
-    return { kind, edgeType: 'flex' };
+    return { kind, edgeType: DEFAULT_MANUAL_EDGE_TYPE };
   }
   return null;
 }
@@ -224,7 +276,7 @@ export function connectionToSerialized(
     target: connection.target!,
     sourceHandle: connection.sourceHandle ?? null,
     targetHandle: connection.targetHandle ?? null,
-    type: semantics?.edgeType || 'flex',
+    type: semantics?.edgeType || DEFAULT_MANUAL_EDGE_TYPE,
     stroke,
     kind: semantics?.kind || 'custom',
     label: semantics?.label,

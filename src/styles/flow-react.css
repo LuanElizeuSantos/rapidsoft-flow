@@ -315,6 +315,16 @@
   pointer-events: none;
 }
 
+.rf-node__detalhe-badge {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #2563eb;
+  line-height: 1;
+}
+
 .rf-node__comentario {
   font-size: 0.58rem;
   font-weight: 500;

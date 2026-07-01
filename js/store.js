@@ -2,7 +2,7 @@
  * Estado do fluxo com persistência no navegador (localStorage).
  * Clientes herdam o padrão em tempo real; customização = inserções, puladas, gatilhos e decisões.
  */
-import { NODES } from './nodes.js';
+import { NODES, NODES_CATALOGO } from './nodes.js';
 import {
   SEQUENCIA_PADRAO_POS_CREDITO,
   SEQUENCIA_GRUPO_NOVA,
@@ -20,6 +20,9 @@ const FlowStore = {
   SUBFLUXO_SEM_RETORNO: '__sem_retorno__',
   grupoAtivo: null,
   fluxoAtivo: null,
+  processoAtivo: null,
+  /** 'padrao' ou id do cliente dono do processo detalhado aberto. */
+  processoDonoCliente: 'padrao',
   diagramLayouts: {},
 
   PREFIXO_FIXO: ['criar-pedido', 'tentar-sugerir'],
@@ -60,6 +63,7 @@ const FlowStore = {
       diagramLayouts: this.diagramLayouts,
       grupoAtivo: this.grupoAtivo,
       fluxoAtivo: this.fluxoAtivo,
+      processoAtivo: this.processoAtivo,
     };
   },
 
@@ -118,6 +122,9 @@ const FlowStore = {
     if (dados.fluxoAtivo) {
       this.fluxoAtivo = dados.fluxoAtivo;
     }
+    if (dados.processoAtivo) {
+      this.processoAtivo = dados.processoAtivo;
+    }
 
     this.migrarMultiplosFluxosPorGrupo();
     this.migrarLayoutsMultiplosFluxos();
@@ -138,6 +145,7 @@ const FlowStore = {
     }
     this.migrarGruposComFluxoPadraoCopiado();
     this.migrarEstruturaGrupos();
+    this.migrarProcessosDetalhados();
     let alterouDecisoes = false;
     CLIENTES.forEach((cl) => {
       if (cl.id !== 'padrao' && this.garantirDecisoesNoFluxo(cl.id)) {
@@ -150,6 +158,9 @@ const FlowStore = {
     if (alterouDecisoes) {
       this.persistirLocal();
     }
+    if (this.garantirNosDoFluxo('padrao')) {
+      this.persistirLocal();
+    }
   },
 
   init() {
@@ -158,6 +169,7 @@ const FlowStore = {
       this.garantirGrupos();
       this.migrarGruposClientes();
       this.migrarEstruturaGrupos();
+      this.migrarProcessosDetalhados();
       this.migrarRegrasPadraoLegado();
       return;
     }
@@ -218,7 +230,82 @@ const FlowStore = {
   },
 
   layoutKey(clienteId) {
-    return `${this.getGrupoAtivo()}:${this.getFluxoAtivoId()}:${clienteId}`;
+    const proc = this.processoAtivo || 'macro';
+    return `${this.getGrupoAtivo()}:${this.getFluxoAtivoId()}:${proc}:${clienteId}`;
+  },
+
+  getProcessoAtivoId() {
+    return this.processoAtivo;
+  },
+
+  getProcessoDonoClienteId() {
+    return this.processoDonoCliente || 'padrao';
+  },
+
+  isModoProcessoDetalhado() {
+    return Boolean(this.processoAtivo);
+  },
+
+  /** Sequência/regras do fluxo macro (não do processo detalhado em edição). */
+  getFluxoMacroDef(grupoId = null, fluxoId = null) {
+    return this.getFluxoDef(grupoId || this.grupoAtivo, fluxoId || this.getFluxoAtivoId());
+  },
+
+  getRegrasMacroFluxo(grupoId = null, fluxoId = null) {
+    const gf = this.getFluxoMacroDef(grupoId, fluxoId);
+    if (!gf?.cadastrado) return this.regrasVazias();
+    this.ensureRegrasGrupo(gf);
+    return gf.regras;
+  },
+
+  /** Sequência do fluxo macro persistido (ignora BASE_FLOW / processo detalhado aberto). */
+  getSequenciaMacroSalva(grupoId = null, fluxoId = null) {
+    const gf = this.getFluxoMacroDef(grupoId, fluxoId);
+    if (!gf?.cadastrado) return [];
+    return [...(gf.sequenciaPosCredito || [])];
+  },
+
+  resolveContextoProcessoDetalhado(clienteId, etapaId) {
+    if (!clienteId || clienteId === 'padrao') {
+      return { escopo: 'macro', donoClienteId: 'padrao' };
+    }
+    if (this.isEtapaDoCliente(etapaId, clienteId)) {
+      return { escopo: 'cliente', donoClienteId: clienteId };
+    }
+    return { escopo: 'macro', donoClienteId: 'padrao' };
+  },
+
+  ensureCustomDetalhes(custom) {
+    if (!custom) return;
+    if (!custom.processosDetalhados) custom.processosDetalhados = {};
+    if (!custom.vinculosDetalhe) custom.vinculosDetalhe = {};
+  },
+
+  getCustomDetalhes(clienteId) {
+    if (!clienteId || clienteId === 'padrao') return null;
+    const c = this.ensureCustom(clienteId);
+    if (!c) return null;
+    this.ensureCustomDetalhes(c);
+    return c;
+  },
+
+  /** @param {string|null|undefined} [hintClienteId] */
+  resolveDonoProcessoDetalhado(grupoId, fluxoId, processoId, hintClienteId = null) {
+    if (hintClienteId && hintClienteId !== 'padrao') {
+      const custom = this.getCustomDetalhes(hintClienteId);
+      if (custom?.processosDetalhados?.[processoId]?.cadastrado) {
+        return hintClienteId;
+      }
+    }
+    const gf = this.getFluxoDef(grupoId, fluxoId);
+    if (gf?.processosDetalhados?.[processoId]?.cadastrado) return 'padrao';
+    const customIds = Object.keys(CLIENT_CUSTOMIZATIONS);
+    for (let i = 0; i < customIds.length; i += 1) {
+      const cid = customIds[i];
+      const custom = this.getCustomDetalhes(cid);
+      if (custom?.processosDetalhados?.[processoId]?.cadastrado) return cid;
+    }
+    return hintClienteId || 'padrao';
   },
 
   getFluxoAtivoId() {
@@ -309,7 +396,9 @@ const FlowStore = {
       || (gid === this.grupoAtivo ? this.getFluxoAtivoId() : null)
       || this.listarFluxos(gid)[0]?.id
       || 'padrao';
-    return container.fluxos[fid] || null;
+    const gf = container.fluxos[fid] || null;
+    if (gf?.cadastrado) this.ensureDetalhesGrupo(gf);
+    return gf;
   },
 
   slugFluxo(grupoId, nome) {
@@ -362,6 +451,85 @@ const FlowStore = {
     return this.ensureDiagramLayout(clienteId).edges;
   },
 
+  mergeCustomEdgeItem(item, overridesMap = {}) {
+    const ov = overridesMap[item.id];
+    if (!ov) return { ...item };
+    return {
+      ...item,
+      ...ov,
+      type: ov.type !== undefined ? ov.type : item.type,
+      label: ov.label !== undefined ? ov.label : item.label,
+      stroke: ov.stroke !== undefined ? ov.stroke : item.stroke,
+      dashed: ov.dashed !== undefined ? Boolean(ov.dashed) : Boolean(item.dashed),
+      animated: ov.animated !== undefined ? Boolean(ov.animated) : Boolean(item.animated),
+      waypoint: ov.waypoint !== undefined ? ov.waypoint : item.waypoint,
+      sourceHandle: ov.sourceHandle !== undefined ? ov.sourceHandle : item.sourceHandle,
+      targetHandle: ov.targetHandle !== undefined ? ov.targetHandle : item.targetHandle,
+    };
+  },
+
+  /** Seta manual do padrão visível no cliente (ainda sem fork local). */
+  isCustomEdgeHerdadaDoPadrao(clienteId, edgeId) {
+    if (clienteId === 'padrao') return false;
+    const local = this.getEdgeLayout(clienteId);
+    if ((local.custom || []).some((e) => e.id === edgeId)) return false;
+    if ((local.removed || []).includes(edgeId)) return false;
+    return (this.getEdgeLayout('padrao').custom || []).some((e) => e.id === edgeId);
+  },
+
+  /**
+   * Layout de arestas efetivo: clientes herdam custom/ocultas/overrides do Padrão.
+   * Edições no cliente ficam só no layout do cliente (fork ao alterar seta herdada).
+   */
+  getMergedEdgeLayout(clienteId) {
+    const local = this.getEdgeLayout(clienteId);
+    if (clienteId === 'padrao') return local;
+
+    const padrao = this.getEdgeLayout('padrao');
+    const removed = new Set([
+      ...(padrao.removed || []),
+      ...(local.removed || []),
+    ]);
+    const localPairs = new Set(
+      (local.custom || []).map((e) => `${e.source}:${e.target}`),
+    );
+    const inheritedCustom = (padrao.custom || [])
+      .filter((e) => !removed.has(e.id) && !localPairs.has(`${e.source}:${e.target}`))
+      .map((e) => this.mergeCustomEdgeItem(e, padrao.overrides));
+
+    const localCustom = (local.custom || []).map(
+      (e) => this.mergeCustomEdgeItem(e, local.overrides),
+    );
+
+    return {
+      removed: [...removed],
+      overrides: { ...(padrao.overrides || {}), ...(local.overrides || {}) },
+      custom: [...inheritedCustom, ...localCustom],
+    };
+  },
+
+  /** Copia seta manual herdada do padrão para o layout do cliente (override local). */
+  forkCustomEdgeHerdada(clienteId, edgeId, patch = {}) {
+    if (clienteId === 'padrao') return null;
+    const layout = this.ensureDiagramLayout(clienteId);
+    const inherited = this.mergeCustomEdgeItem(
+      this.getEdgeLayout('padrao').custom?.find((e) => e.id === edgeId) || {},
+      this.getEdgeLayout('padrao').overrides,
+    );
+    if (!inherited?.id) return null;
+    if (layout.edges.custom.some((e) => e.id === edgeId)) {
+      const item = layout.edges.custom.find((e) => e.id === edgeId);
+      Object.assign(item, patch);
+      return item;
+    }
+    const fork = { ...inherited, ...patch };
+    layout.edges.custom.push(fork);
+    if (!layout.edges.removed.includes(edgeId)) {
+      layout.edges.removed.push(edgeId);
+    }
+    return fork;
+  },
+
   getDiagramLayout(clienteId) {
     return this.getNodePositions(clienteId);
   },
@@ -383,7 +551,14 @@ const FlowStore = {
   removeDiagramEdge(clienteId, edgeId) {
     const layout = this.ensureDiagramLayout(clienteId);
     if (this.isCustomEdgeId(edgeId)) {
+      const tinhaLocal = layout.edges.custom.some((e) => e.id === edgeId);
       layout.edges.custom = layout.edges.custom.filter((e) => e.id !== edgeId);
+      if (!tinhaLocal && clienteId !== 'padrao') {
+        const herdada = this.getEdgeLayout('padrao').custom?.some((e) => e.id === edgeId);
+        if (herdada && !layout.edges.removed.includes(edgeId)) {
+          layout.edges.removed.push(edgeId);
+        }
+      }
       return;
     }
     if (!layout.edges.removed.includes(edgeId)) {
@@ -512,14 +687,19 @@ const FlowStore = {
   },
 
   getHiddenEdgeIds(clienteId) {
-    return [...(this.getEdgeLayout(clienteId).removed || [])];
+    return [...(this.getMergedEdgeLayout(clienteId).removed || [])];
   },
 
   setEdgeOverride(clienteId, edgeId, patch) {
     const layout = this.ensureDiagramLayout(clienteId);
     if (this.isCustomEdgeId(edgeId)) {
       const item = layout.edges.custom.find((e) => e.id === edgeId);
-      if (item) Object.assign(item, patch);
+      if (item) {
+        Object.assign(item, patch);
+        delete layout.edges.overrides[edgeId];
+        return;
+      }
+      if (this.forkCustomEdgeHerdada(clienteId, edgeId, patch)) return;
       return;
     }
     layout.edges.overrides[edgeId] = {
@@ -547,7 +727,11 @@ const FlowStore = {
     };
     if (this.isCustomEdgeId(edgeId)) {
       const item = layout.edges.custom.find((e) => e.id === edgeId);
-      if (item) Object.assign(item, patch);
+      if (item) {
+        Object.assign(item, patch);
+        return;
+      }
+      if (this.forkCustomEdgeHerdada(clienteId, edgeId, patch)) return;
       return;
     }
     this.setEdgeOverride(clienteId, edgeId, patch);
@@ -594,7 +778,392 @@ const FlowStore = {
       sequenciaPosCredito: [...SEQUENCIA_GRUPO_NOVA],
       estrutura: 'livre',
       regras: this.regrasVazias(),
+      processosDetalhados: {},
+      vinculosDetalhe: {},
     };
+  },
+
+  ensureDetalhesGrupo(gf) {
+    if (!gf) return;
+    if (!gf.processosDetalhados) gf.processosDetalhados = {};
+    if (!gf.vinculosDetalhe) gf.vinculosDetalhe = {};
+  },
+
+  criarProcessoDetalhadoVazio(id, nome) {
+    return {
+      id,
+      nome: (nome || id).trim(),
+      descricao: '',
+      sequenciaPosCredito: [],
+      regras: this.regrasVazias(),
+      cadastrado: true,
+    };
+  },
+
+  slugProcessoDetalhado(gf, nome, preferId = null) {
+    if (preferId && !gf.processosDetalhados[preferId]) return preferId;
+    let slug = (nome || 'processo').toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (!slug) slug = 'processo';
+    let candidato = slug;
+    let n = 2;
+    while (gf.processosDetalhados[candidato]?.cadastrado) {
+      candidato = `${slug}-${n}`;
+      n += 1;
+    }
+    return candidato;
+  },
+
+  listarProcessosDetalhados(grupoId, fluxoId, clienteId = 'padrao') {
+    if (!clienteId || clienteId === 'padrao') {
+      const gf = this.getFluxoDef(grupoId, fluxoId);
+      if (!gf?.cadastrado) return [];
+      this.ensureDetalhesGrupo(gf);
+      return Object.values(gf.processosDetalhados)
+        .filter((p) => p?.cadastrado)
+        .map((p) => ({
+          id: p.id,
+          nome: p.nome,
+          descricao: p.descricao || '',
+          etapas: p.sequenciaPosCredito?.length || 0,
+          etapaMacroId: this.getEtapaVinculadaProcesso(grupoId, fluxoId, p.id, 'padrao'),
+          donoClienteId: 'padrao',
+        }));
+    }
+
+    const custom = this.getCustomDetalhes(clienteId);
+    if (!custom) return [];
+    return Object.values(custom.processosDetalhados)
+      .filter((p) => p?.cadastrado)
+      .map((p) => ({
+        id: p.id,
+        nome: p.nome,
+        descricao: p.descricao || '',
+        etapas: p.sequenciaPosCredito?.length || 0,
+        etapaMacroId: this.getEtapaVinculadaProcesso(grupoId, fluxoId, p.id, clienteId),
+        donoClienteId: clienteId,
+      }));
+  },
+
+  getEtapaVinculadaProcesso(grupoId, fluxoId, processoId, clienteId = 'padrao') {
+    if (!clienteId || clienteId === 'padrao') {
+      const gf = this.getFluxoDef(grupoId, fluxoId);
+      if (!gf) return null;
+      this.ensureDetalhesGrupo(gf);
+      const entry = Object.entries(gf.vinculosDetalhe).find(([, pid]) => pid === processoId);
+      return entry?.[0] || null;
+    }
+    const custom = this.getCustomDetalhes(clienteId);
+    if (!custom) return null;
+    const entry = Object.entries(custom.vinculosDetalhe).find(([, pid]) => pid === processoId);
+    return entry?.[0] || null;
+  },
+
+  getProcessoVinculadoEtapa(grupoId, fluxoId, etapaMacroId, clienteId = 'padrao') {
+    const ctx = this.resolveContextoProcessoDetalhado(clienteId, etapaMacroId);
+    if (ctx.escopo === 'macro') {
+      const gf = this.getFluxoDef(grupoId, fluxoId);
+      if (!gf || !etapaMacroId) return null;
+      this.ensureDetalhesGrupo(gf);
+      const pid = gf.vinculosDetalhe[etapaMacroId];
+      return pid && gf.processosDetalhados[pid]?.cadastrado ? pid : null;
+    }
+    const custom = this.getCustomDetalhes(ctx.donoClienteId);
+    if (!custom || !etapaMacroId) return null;
+    const pid = custom.vinculosDetalhe[etapaMacroId];
+    return pid && custom.processosDetalhados[pid]?.cadastrado ? pid : null;
+  },
+
+  temProcessoDetalhadoVinculado(grupoId, fluxoId, etapaMacroId, clienteId = 'padrao') {
+    return Boolean(this.getProcessoVinculadoEtapa(grupoId, fluxoId, etapaMacroId, clienteId));
+  },
+
+  getProcessoDetalhadoDef(grupoId, fluxoId, processoId, donoClienteId = null) {
+    const dono = donoClienteId || this.processoDonoCliente || 'padrao';
+    if (dono === 'padrao') {
+      const gf = this.getFluxoDef(grupoId, fluxoId);
+      if (!gf) return null;
+      this.ensureDetalhesGrupo(gf);
+      return gf.processosDetalhados[processoId] || null;
+    }
+    const custom = this.getCustomDetalhes(dono);
+    return custom?.processosDetalhados?.[processoId] || null;
+  },
+
+  aplicarProcessoParaBaseFlow(pd) {
+    if (!pd) return;
+    const gf = this.getFluxoMacroDef();
+    this.sanitizarProcessoDetalhado(pd, gf);
+    BASE_FLOW.nome = pd.nome;
+    BASE_FLOW.descricao = pd.descricao || '';
+    BASE_FLOW.sequenciaPosCredito = [...(pd.sequenciaPosCredito || [])];
+    this.ensureRegrasGrupo(pd);
+    BASE_FLOW.regras = {
+      subfluxos: [...pd.regras.subfluxos],
+      ligacoes: [...pd.regras.ligacoes],
+      decisoes: [...pd.regras.decisoes],
+    };
+  },
+
+  /**
+   * Corrige processos detalhados que herdaram por engano nome/descrição/sequência do macro.
+   */
+  sanitizarProcessoDetalhado(pd, gf = null) {
+    if (!pd?.cadastrado) return false;
+    const macro = gf || this.getFluxoMacroDef();
+    if (!macro?.cadastrado) return false;
+
+    let alterou = false;
+    const seq = [...(pd.sequenciaPosCredito || [])];
+    const macroSeq = [...(macro.sequenciaPosCredito || [])];
+    const regrasVazias = !pd.regras?.subfluxos?.length
+      && !pd.regras?.ligacoes?.length
+      && !pd.regras?.decisoes?.length;
+
+    const copiaIntegralMacro = seq.length > 0
+      && seq.length === macroSeq.length
+      && seq.every((id, i) => id === macroSeq[i]);
+
+    if (copiaIntegralMacro) {
+      pd.sequenciaPosCredito = [];
+      pd.regras = this.regrasVazias();
+      alterou = true;
+    }
+
+    if ((pd.sequenciaPosCredito || []).length === 0 && regrasVazias) {
+      if (pd.descricao && pd.descricao === macro.descricao) {
+        pd.descricao = '';
+        alterou = true;
+      }
+      if (pd.nome === macro.nome) {
+        const etapaId = Object.entries(macro.vinculosDetalhe || {})
+          .find(([, pid]) => pid === pd.id)?.[0];
+        const labelEtapa = etapaId && NODES[etapaId]?.label;
+        if (labelEtapa) {
+          pd.nome = labelEtapa;
+          alterou = true;
+        }
+      }
+    }
+
+    return alterou;
+  },
+
+  aplicarMacroParaBaseFlow(gf) {
+    if (!gf?.cadastrado) {
+      BASE_FLOW.nome = 'Fluxo padrão';
+      BASE_FLOW.descricao = '';
+      BASE_FLOW.sequenciaPosCredito = [];
+      BASE_FLOW.regras = this.regrasVazias();
+      return;
+    }
+    BASE_FLOW.nome = gf.nome;
+    BASE_FLOW.descricao = gf.descricao;
+    BASE_FLOW.sequenciaPosCredito = [...gf.sequenciaPosCredito];
+    this.ensureRegrasGrupo(gf);
+    this.sincronizarRegrasParaBaseFlow(gf);
+    if (gf.estrutura === 'faturamento' && gf.creditFork) {
+      Object.assign(this.CREDIT_FORK, gf.creditFork);
+    }
+  },
+
+  salvarContextoAtivoParaGf(gf) {
+    if (!gf?.cadastrado) return;
+    if (this.processoAtivo) {
+      const pd = this.getProcessoDetalhadoDef(
+        this.grupoAtivo,
+        this.fluxoAtivo,
+        this.processoAtivo,
+        this.processoDonoCliente,
+      );
+      if (!pd) return;
+      pd.nome = BASE_FLOW.nome;
+      pd.descricao = BASE_FLOW.descricao;
+      pd.sequenciaPosCredito = [...BASE_FLOW.sequenciaPosCredito];
+      pd.regras = this.clonarRegras(this.getRegrasPadrao());
+      return;
+    }
+    gf.nome = BASE_FLOW.nome;
+    gf.descricao = BASE_FLOW.descricao;
+    gf.sequenciaPosCredito = [...BASE_FLOW.sequenciaPosCredito];
+    gf.regras = this.clonarRegras(this.getRegrasPadrao());
+    if (gf.estrutura === 'faturamento') {
+      gf.creditFork = { ...this.CREDIT_FORK };
+    }
+  },
+
+  criarProcessoDetalhado(grupoId, fluxoId, nome, etapaMacroId = null, donoClienteId = 'padrao') {
+    const label = (nome || '').trim();
+    if (!label) return { ok: false, erro: 'Informe o nome do processo.' };
+
+    if (!donoClienteId || donoClienteId === 'padrao') {
+      const gf = this.getFluxoDef(grupoId, fluxoId);
+      if (!gf?.cadastrado) return { ok: false, erro: 'Fluxo macro inválido.' };
+      this.ensureDetalhesGrupo(gf);
+      const id = this.slugProcessoDetalhado(gf, label, etapaMacroId || null);
+      gf.processosDetalhados[id] = this.criarProcessoDetalhadoVazio(id, label);
+      if (etapaMacroId) {
+        const v = this.vincularProcessoDetalhado(grupoId, fluxoId, etapaMacroId, id, 'padrao');
+        if (!v.ok) return v;
+      }
+      this.persistir();
+      return { ok: true, processoId: id, donoClienteId: 'padrao' };
+    }
+
+    const custom = this.getCustomDetalhes(donoClienteId);
+    if (!custom) return { ok: false, erro: 'Cliente inválido.' };
+    const gf = this.getFluxoDef(grupoId, fluxoId);
+    if (!gf?.cadastrado) return { ok: false, erro: 'Fluxo macro inválido.' };
+    const id = this.slugProcessoDetalhadoCliente(custom, label, etapaMacroId || null);
+    custom.processosDetalhados[id] = this.criarProcessoDetalhadoVazio(id, label);
+    if (etapaMacroId) {
+      const v = this.vincularProcessoDetalhado(grupoId, fluxoId, etapaMacroId, id, donoClienteId);
+      if (!v.ok) return v;
+    }
+    this.persistir();
+    return { ok: true, processoId: id, donoClienteId };
+  },
+
+  slugProcessoDetalhadoCliente(custom, nome, preferId = null) {
+    if (preferId && !custom.processosDetalhados[preferId]) return preferId;
+    let slug = (nome || 'processo').toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (!slug) slug = 'processo';
+    let candidato = slug;
+    let n = 2;
+    while (custom.processosDetalhados[candidato]?.cadastrado) {
+      candidato = `${slug}-${n}`;
+      n += 1;
+    }
+    return candidato;
+  },
+
+  detalharEtapaMacro(grupoId, fluxoId, etapaMacroId, clienteId = 'padrao') {
+    if (!etapaMacroId || !NODES[etapaMacroId]) {
+      return { ok: false, erro: 'Etapa inválida.' };
+    }
+    const ctx = this.resolveContextoProcessoDetalhado(clienteId, etapaMacroId);
+    if (ctx.escopo === 'cliente' && clienteId !== 'padrao' && clienteId !== ctx.donoClienteId) {
+      return { ok: false, erro: 'Etapa não pertence a este cliente.' };
+    }
+    if (ctx.escopo === 'macro' && clienteId !== 'padrao') {
+      const existente = this.getProcessoVinculadoEtapa(grupoId, fluxoId, etapaMacroId, 'padrao');
+      if (existente) {
+        return { ok: true, processoId: existente, donoClienteId: 'padrao' };
+      }
+      return { ok: false, erro: 'Detalhe de etapas do padrão só pode ser criado na aba Padrão.' };
+    }
+    const existente = this.getProcessoVinculadoEtapa(
+      grupoId,
+      fluxoId,
+      etapaMacroId,
+      ctx.donoClienteId,
+    );
+    if (existente) {
+      return { ok: true, processoId: existente, donoClienteId: ctx.donoClienteId };
+    }
+    const nome = NODES[etapaMacroId].label || etapaMacroId;
+    return this.criarProcessoDetalhado(
+      grupoId,
+      fluxoId,
+      nome,
+      etapaMacroId,
+      ctx.donoClienteId,
+    );
+  },
+
+  vincularProcessoDetalhado(grupoId, fluxoId, etapaMacroId, processoId, donoClienteId = 'padrao') {
+    const pd = this.getProcessoDetalhadoDef(grupoId, fluxoId, processoId, donoClienteId);
+    if (!pd) {
+      return { ok: false, erro: 'Processo ou fluxo macro inválido.' };
+    }
+    if (!etapaMacroId) {
+      return { ok: false, erro: 'Selecione a etapa do macro.' };
+    }
+
+    if (!donoClienteId || donoClienteId === 'padrao') {
+      const gf = this.getFluxoDef(grupoId, fluxoId);
+      if (!gf?.cadastrado) {
+        return { ok: false, erro: 'Processo ou fluxo macro inválido.' };
+      }
+      this.ensureDetalhesGrupo(gf);
+      Object.keys(gf.vinculosDetalhe).forEach((etapa) => {
+        if (gf.vinculosDetalhe[etapa] === processoId && etapa !== etapaMacroId) {
+          delete gf.vinculosDetalhe[etapa];
+        }
+      });
+      gf.vinculosDetalhe[etapaMacroId] = processoId;
+      this.persistir();
+      return { ok: true };
+    }
+
+    const custom = this.getCustomDetalhes(donoClienteId);
+    if (!custom) return { ok: false, erro: 'Cliente inválido.' };
+    if (!this.isEtapaDoCliente(etapaMacroId, donoClienteId)) {
+      return { ok: false, erro: 'Só é possível vincular a etapas exclusivas do cliente.' };
+    }
+    Object.keys(custom.vinculosDetalhe).forEach((etapa) => {
+      if (custom.vinculosDetalhe[etapa] === processoId && etapa !== etapaMacroId) {
+        delete custom.vinculosDetalhe[etapa];
+      }
+    });
+    custom.vinculosDetalhe[etapaMacroId] = processoId;
+    this.persistir();
+    return { ok: true };
+  },
+
+  desvincularProcessoDetalhado(grupoId, fluxoId, etapaMacroId, donoClienteId = 'padrao') {
+    const ctx = this.resolveContextoProcessoDetalhado(donoClienteId, etapaMacroId);
+    if (ctx.escopo === 'macro') {
+      const gf = this.getFluxoDef(grupoId, fluxoId);
+      if (!gf) return false;
+      this.ensureDetalhesGrupo(gf);
+      if (!gf.vinculosDetalhe[etapaMacroId]) return false;
+      delete gf.vinculosDetalhe[etapaMacroId];
+      this.persistir();
+      return true;
+    }
+    const custom = this.getCustomDetalhes(ctx.donoClienteId);
+    if (!custom?.vinculosDetalhe[etapaMacroId]) return false;
+    delete custom.vinculosDetalhe[etapaMacroId];
+    this.persistir();
+    return true;
+  },
+
+  removerProcessoDetalhado(grupoId, fluxoId, processoId, donoClienteId = 'padrao') {
+    const dono = this.resolveDonoProcessoDetalhado(grupoId, fluxoId, processoId, donoClienteId);
+
+    if (dono === 'padrao') {
+      const gf = this.getFluxoDef(grupoId, fluxoId);
+      if (!gf) return false;
+      this.ensureDetalhesGrupo(gf);
+      if (!gf.processosDetalhados[processoId]) return false;
+      Object.keys(gf.vinculosDetalhe).forEach((etapa) => {
+        if (gf.vinculosDetalhe[etapa] === processoId) delete gf.vinculosDetalhe[etapa];
+      });
+      delete gf.processosDetalhados[processoId];
+    } else {
+      const custom = this.getCustomDetalhes(dono);
+      if (!custom?.processosDetalhados[processoId]) return false;
+      Object.keys(custom.vinculosDetalhe).forEach((etapa) => {
+        if (custom.vinculosDetalhe[etapa] === processoId) delete custom.vinculosDetalhe[etapa];
+      });
+      delete custom.processosDetalhados[processoId];
+    }
+
+    const prefix = `${grupoId}:${fluxoId}:${processoId}:`;
+    Object.keys(this.diagramLayouts).forEach((key) => {
+      if (key.startsWith(prefix)) delete this.diagramLayouts[key];
+    });
+    if (this.processoAtivo === processoId
+      && this.grupoAtivo === grupoId
+      && this.fluxoAtivo === fluxoId) {
+      this.carregarFluxo(grupoId, fluxoId, null);
+    }
+    this.persistir();
+    return true;
   },
 
   regrasVazias() {
@@ -658,6 +1227,7 @@ const FlowStore = {
   },
 
   usaEstruturaFaturamento(grupoId) {
+    if (this.isModoProcessoDetalhado()) return false;
     const gf = this.getFluxoGrupo(grupoId || this.getGrupoAtivo());
     return !!(gf?.cadastrado && gf.estrutura === 'faturamento');
   },
@@ -718,16 +1288,28 @@ const FlowStore = {
     return this.cadastrarFluxo(grupoId, nome, descricao);
   },
 
-  carregarFluxo(grupoId, fluxoId) {
+  /** @param {string|null|undefined} [donoClienteId] */
+  carregarFluxo(grupoId, fluxoId, processoId, donoClienteId = null) {
+    const proc = processoId || null;
     if (!grupoId || !GRUPOS.some((g) => g.id === grupoId)) {
       grupoId = GRUPOS[0]?.id || null;
     }
     const fid = fluxoId || this.listarFluxos(grupoId)[0]?.id || 'padrao';
-    if (this.grupoAtivo && (this.grupoAtivo !== grupoId || this.fluxoAtivo !== fid)) {
+    const dono = proc
+      ? this.resolveDonoProcessoDetalhado(grupoId, fid, proc, donoClienteId)
+      : 'padrao';
+    const trocouContexto = this.grupoAtivo !== grupoId
+      || this.fluxoAtivo !== fid
+      || this.processoAtivo !== (processoId || null)
+      || this.processoDonoCliente !== dono;
+    if (this.grupoAtivo && trocouContexto) {
       this.salvarFluxoAtivo();
     }
     this.grupoAtivo = grupoId;
     this.fluxoAtivo = fid;
+    this.processoAtivo = proc;
+    this.processoDonoCliente = dono;
+
     if (!grupoId) {
       BASE_FLOW.nome = 'Fluxo padrão';
       BASE_FLOW.descricao = '';
@@ -735,41 +1317,49 @@ const FlowStore = {
       BASE_FLOW.regras = this.regrasVazias();
       return;
     }
+
     const gf = this.getFluxoDef(grupoId, fid);
-    if (gf?.cadastrado) {
-      BASE_FLOW.nome = gf.nome;
-      BASE_FLOW.descricao = gf.descricao;
-      BASE_FLOW.sequenciaPosCredito = [...gf.sequenciaPosCredito];
-      this.ensureRegrasGrupo(gf);
-      this.sincronizarRegrasParaBaseFlow(gf);
-      if (gf.estrutura === 'faturamento' && gf.creditFork) {
-        Object.assign(this.CREDIT_FORK, gf.creditFork);
+    this.ensureDetalhesGrupo(gf);
+
+    if (this.processoAtivo) {
+      const pd = this.getProcessoDetalhadoDef(grupoId, fid, this.processoAtivo, dono);
+      if (pd?.cadastrado) {
+        this.aplicarProcessoParaBaseFlow(pd);
+      } else {
+        this.processoAtivo = null;
+        this.processoDonoCliente = 'padrao';
+        this.aplicarMacroParaBaseFlow(gf);
       }
     } else {
-      BASE_FLOW.nome = 'Fluxo padrão';
-      BASE_FLOW.descricao = '';
-      BASE_FLOW.sequenciaPosCredito = [];
-      BASE_FLOW.regras = this.regrasVazias();
+      this.processoDonoCliente = 'padrao';
+      this.aplicarMacroParaBaseFlow(gf);
     }
+    this.garantirNosDoFluxo('padrao');
   },
 
-  carregarGrupo(grupoId, fluxoId) {
+  /** @param {string|null|undefined} [donoClienteId] */
+  carregarProcessoDetalhado(grupoId, fluxoId, processoId, donoClienteId = null) {
+    this.carregarFluxo(grupoId, fluxoId, processoId, donoClienteId);
+  },
+
+  voltarParaMacro() {
+    if (!this.grupoAtivo) return;
+    this.processoDonoCliente = 'padrao';
+    this.carregarFluxo(this.grupoAtivo, this.fluxoAtivo, null);
+  },
+
+  /** @param {string|null|undefined} [donoClienteId] */
+  carregarGrupo(grupoId, fluxoId, processoId, donoClienteId = null) {
     const fluxos = grupoId ? this.listarFluxos(grupoId) : [];
     const fid = fluxoId || fluxos[0]?.id || 'padrao';
-    this.carregarFluxo(grupoId, fid);
+    this.carregarFluxo(grupoId, fid, processoId, donoClienteId);
   },
 
   salvarFluxoAtivo() {
     if (!this.grupoAtivo || !this.fluxoAtivo) return;
     const gf = this.getFluxoDef(this.grupoAtivo, this.fluxoAtivo);
-    if (!gf?.cadastrado) return;
-    gf.nome = BASE_FLOW.nome;
-    gf.descricao = BASE_FLOW.descricao;
-    gf.sequenciaPosCredito = [...BASE_FLOW.sequenciaPosCredito];
-    gf.regras = this.clonarRegras(this.getRegrasPadrao());
-    if (gf.estrutura === 'faturamento') {
-      gf.creditFork = { ...this.CREDIT_FORK };
-    }
+    this.ensureDetalhesGrupo(gf);
+    this.salvarContextoAtivoParaGf(gf);
   },
 
   salvarGrupoAtivo() {
@@ -778,6 +1368,27 @@ const FlowStore = {
 
   garantirGrupos() {
     /* Estado inicial sem grupos demo — cadastro na capa. */
+  },
+
+  migrarProcessosDetalhados() {
+    let alterou = false;
+    GRUPOS.forEach((g) => {
+      const container = this.ensureContainerGrupo(g.id);
+      Object.values(container.fluxos || {}).forEach((gf) => {
+        if (!gf?.cadastrado) return;
+        this.ensureDetalhesGrupo(gf);
+        Object.values(gf.processosDetalhados || {}).forEach((pd) => {
+          if (this.sanitizarProcessoDetalhado(pd, gf)) alterou = true;
+        });
+      });
+    });
+    Object.values(CLIENT_CUSTOMIZATIONS).forEach((custom) => {
+      if (!custom?.processosDetalhados) return;
+      Object.values(custom.processosDetalhados).forEach((pd) => {
+        if (this.sanitizarProcessoDetalhado(pd, null)) alterou = true;
+      });
+    });
+    return alterou;
   },
 
   migrarEstruturaGrupos() {
@@ -1055,10 +1666,50 @@ const FlowStore = {
     return this.getSequenciaPrincipalPadrao();
   },
 
-  /** Linha principal do padrão — sem passos que pertencem só a subfluxos. */
+  /** Linha principal do contexto ativo (macro ou processo detalhado em edição). */
   getSequenciaPrincipalPadrao() {
     this.sanitizarSequenciaPadrao();
     return [...BASE_FLOW.sequenciaPosCredito];
+  },
+
+  /** Garante entrada em NODES para cada id usado no fluxo ativo (sequência, decisões, subfluxos). */
+  garantirNosDoFluxo(clienteId = 'padrao') {
+    const ids = new Set();
+    this.getSequenciaPosCredito(clienteId).forEach((id) => ids.add(id));
+    this.getPassosEmSubfluxos(clienteId).forEach((id) => ids.add(id));
+    this.getDecisoes(clienteId).forEach((d) => {
+      if (d.no) ids.add(d.no);
+      if (d.sim) ids.add(d.sim);
+      if (d.nao) ids.add(d.nao);
+    });
+    this.getPrefixoFixo(this.getGrupoAtivo()).forEach((id) => ids.add(id));
+    const fork = this.getCreditFork(this.getGrupoAtivo());
+    if (fork) {
+      [fork.decisao, fork.desbloquear, fork.mergeEm, fork.retornoPara].forEach((id) => {
+        if (id) ids.add(id);
+      });
+    }
+
+    let criou = false;
+    ids.forEach((id) => {
+      if (!id || NODES[id]) return;
+      const pareceDecisao = /[?？]$/.test(id) || String(id).includes('decisao');
+      NODES[id] = {
+        id,
+        label: String(id).replace(/-/g, ' ').toUpperCase(),
+        tipo: pareceDecisao ? 'decisao' : 'processo',
+        exclusivoCliente: false,
+      };
+      criou = true;
+    });
+    return criou;
+  },
+
+  indiceInsercaoPorAncora(clienteId, refId, tipo = 'depois') {
+    const seq = this.getSequenciaPosCredito(clienteId);
+    const i = seq.indexOf(refId);
+    if (i < 0) return seq.length;
+    return tipo === 'antes' ? i : i + 1;
   },
 
   /** Tira da sequência principal etapas que estão em subfluxo do padrão. */
@@ -1119,7 +1770,9 @@ const FlowStore = {
 
   /** Padrão + overrides do cliente (mesmo `de` no cliente substitui o do padrão). */
   getSubfluxos(clienteId) {
-    const base = this.getRegrasPadrao().subfluxos || [];
+    const base = (clienteId === 'padrao'
+      ? this.getRegrasPadrao()
+      : this.getRegrasMacroFluxo()).subfluxos || [];
     if (clienteId === 'padrao') return [...base];
     const proprios = this.getCustom(clienteId)?.subfluxos || [];
     const porDe = new Map(base.map((s) => [s.de, { ...s, passos: [...(s.passos || [])] }]));
@@ -1142,7 +1795,8 @@ const FlowStore = {
   },
 
   getLigacoes(clienteId) {
-    const base = (this.getRegrasPadrao().ligacoes || []).filter((l) => l.tipo === 'salto');
+    const regrasBase = clienteId === 'padrao' ? this.getRegrasPadrao() : this.getRegrasMacroFluxo();
+    const base = (regrasBase.ligacoes || []).filter((l) => l.tipo === 'salto');
     if (clienteId === 'padrao') return [...base];
     const proprios = (this.getCustom(clienteId)?.ligacoes || []).filter((l) => l.tipo === 'salto');
     const porDe = new Map(base.map((l) => [l.de, l]));
@@ -1151,7 +1805,9 @@ const FlowStore = {
   },
 
   getDecisoes(clienteId) {
-    const base = this.getRegrasPadrao().decisoes || [];
+    const base = (clienteId === 'padrao'
+      ? this.getRegrasPadrao()
+      : this.getRegrasMacroFluxo()).decisoes || [];
     if (clienteId === 'padrao') return [...base];
     const proprios = this.getCustom(clienteId)?.decisoes || [];
     const porNo = new Map(base.map((d) => [d.no, d]));
@@ -1162,10 +1818,10 @@ const FlowStore = {
   /** Monta sequência do cliente a partir de uma base (padrão) informada. */
   montarSequenciaCliente(custom, baseSeq = null) {
     const passosSub = new Set([
-      ...this.getRegrasPadrao().subfluxos.flatMap((s) => s.passos || []),
+      ...this.getRegrasMacroFluxo().subfluxos.flatMap((s) => s.passos || []),
       ...(custom?.subfluxos || []).flatMap((s) => s.passos || []),
     ]);
-    let sequencia = [...(baseSeq || this.getSequenciaPrincipalPadrao())].filter(
+    let sequencia = [...(baseSeq || this.getSequenciaMacroSalva())].filter(
       (id) => !passosSub.has(id),
     );
 
@@ -1700,9 +2356,19 @@ const FlowStore = {
     return this.getDiffCliente(clienteId).adicionadas.includes(noId);
   },
 
+  /** Etapas exclusivas do cliente disponíveis para vínculo de processo detalhado. */
+  getEtapasClienteParaVinculoDetalhe(clienteId) {
+    if (!clienteId || clienteId === 'padrao') return [];
+    return this.getSequenciaPosCredito(clienteId).filter(
+      (id) => this.isEtapaDoCliente(id, clienteId),
+    );
+  },
+
   isEtapaBase(noId) {
-    if (this.getSequenciaPrincipalPadrao().includes(noId)) return true;
-    return this.getPassosEmSubfluxos('padrao').includes(noId);
+    if (this.getSequenciaMacroSalva().includes(noId)) return true;
+    const passosSub = (this.getRegrasMacroFluxo().subfluxos || [])
+      .flatMap((s) => s.passos || []);
+    return passosSub.includes(noId);
   },
 
   ensureCustom(clienteId) {
@@ -1733,6 +2399,7 @@ const FlowStore = {
     if (!c.insercoes) c.insercoes = [];
     if (!c.subfluxos) c.subfluxos = [];
     if (!c.insertBefore) c.insertBefore = {};
+    this.ensureCustomDetalhes(c);
     return c;
   },
 
@@ -1879,11 +2546,13 @@ const FlowStore = {
   },
 
   garantirDecisoesNoFluxo(clienteId) {
-    const c = this.getCustom(clienteId);
-    if (!c?.decisoes?.length) return false;
+    const decisoes = clienteId === 'padrao'
+      ? (this.getRegrasPadrao().decisoes || [])
+      : (this.getCustom(clienteId)?.decisoes || []);
+    if (!decisoes.length) return false;
 
     let alterou = false;
-    c.decisoes.forEach((d) => {
+    decisoes.forEach((d) => {
       if (!d.no || !NODES[d.no]) return;
 
       const naSeq = this.getSequenciaPosCredito(clienteId).includes(d.no);
@@ -1891,32 +2560,21 @@ const FlowStore = {
       if (naSeq || noSub) return;
 
       let apos = d.apos;
-      if (!apos) {
-        const ins = (c.insercoes || []).find((x) => x.id === d.no);
+      if (!apos && clienteId !== 'padrao') {
+        const c = this.getCustom(clienteId);
+        const ins = (c?.insercoes || []).find((x) => x.id === d.no);
         apos = ins?.apos || null;
       }
 
-      if (!apos) {
-        const subs = c.subfluxos || [];
+      if (!apos && clienteId !== 'padrao') {
+        const subs = this.getCustom(clienteId)?.subfluxos || [];
         if (subs.length === 1 && subs[0].passos?.length) {
           apos = subs[0].passos[subs[0].passos.length - 1];
           d.apos = apos;
         }
       }
 
-      if (!apos) return;
-
-      if (apos.startsWith('__sub_inicio:')) {
-        const subDe = apos.slice('__sub_inicio:'.length);
-        if (this.inserirPassoEmSubfluxo(clienteId, subDe, d.no, null)) alterou = true;
-        return;
-      }
-
-      const sub = this.getSubfluxoContendoPasso(clienteId, apos);
-      if (sub) {
-        if (this.inserirPassoEmSubfluxo(clienteId, sub.de, d.no, apos)) alterou = true;
-      } else {
-        this.inserirNoCliente(clienteId, d.no, apos);
+      if (this.inserirDecisaoNoFluxo(clienteId, d.no, apos || null)) {
         alterou = true;
       }
     });
@@ -2183,7 +2841,46 @@ const FlowStore = {
       nao: nao || null,
       apos: apos || null,
     });
-    if (clienteId !== 'padrao') this.garantirDecisoesNoFluxo(clienteId);
+    this.garantirDecisoesNoFluxo(clienteId);
+  },
+
+  /** Coloca nó de decisão na sequência principal ou em subfluxo. */
+  inserirDecisaoNoFluxo(clienteId, noId, aposId = null) {
+    if (!noId || !NODES[noId]) return false;
+    const seq = this.getSequenciaPosCredito(clienteId);
+    if (seq.includes(noId)) return false;
+    if (this.getSubfluxoContendoPasso(clienteId, noId)) return false;
+
+    if (aposId?.startsWith('__sub_inicio:')) {
+      const subDe = aposId.slice('__sub_inicio:'.length);
+      return this.inserirPassoEmSubfluxo(clienteId, subDe, noId, null);
+    }
+
+    if (aposId) {
+      const sub = this.getSubfluxoContendoPasso(clienteId, aposId);
+      if (sub) {
+        return this.inserirPassoEmSubfluxo(clienteId, sub.de, noId, aposId);
+      }
+    }
+
+    if (clienteId === 'padrao') {
+      const indice = aposId
+        ? this.indiceInsercaoPorAncora('padrao', aposId, 'depois')
+        : seq.length;
+      this.inserirEtapa('padrao', indice, noId);
+      return true;
+    }
+
+    if (aposId) {
+      this.inserirNoCliente(clienteId, noId, aposId);
+      return true;
+    }
+
+    const custom = this.ensureCustom(clienteId);
+    if (!custom) return false;
+    if (!custom.extrasNoFim) custom.extrasNoFim = [];
+    custom.extrasNoFim.push(noId);
+    return true;
   },
 
   atualizarVinculosDecisao(clienteId, noId, { sim, nao } = {}) {
@@ -2343,30 +3040,72 @@ const FlowStore = {
     return Object.values(NODES).map((n) => ({ id: n.id, label: n.label, tipo: n.tipo }));
   },
 
-  /** Etapas elegíveis em "Inserir existente" — só do fluxo ativo, sem catálogo legado. */
-  listaEtapasParaInserir(clienteId) {
-    const seq = new Set(this.getSequenciaPosCredito(clienteId));
-    const soSubfluxo = new Set(this.getPassosEmSubfluxos(clienteId));
-    const noFluxo = new Set([
-      ...this.getSequenciaPosCredito(clienteId),
-      ...soSubfluxo,
-      ...this.getDecisoes(clienteId).flatMap((d) => [d.no, d.sim, d.nao].filter(Boolean)),
-      ...this.getPrefixoFixo(clienteId),
-    ]);
-    const fork = this.getCreditFork(clienteId);
-    if (fork) {
-      [fork.decisao, fork.desbloquear, fork.mergeEm, fork.retornoPara].forEach((id) => {
-        if (id) noFluxo.add(id);
+  /** Todos os nós conhecidos do projeto (catálogo + fluxos + processos detalhados). */
+  coletarCatalogoNosProjeto(grupoId, fluxoId) {
+    const mapa = new Map();
+    const registrar = (id, fallback) => {
+      if (!id) return;
+      if (mapa.has(id)) return;
+      const n = NODES[id] || NODES_CATALOGO[id] || fallback;
+      mapa.set(id, {
+        id,
+        label: n?.label || String(id).replace(/-/g, ' ').toUpperCase(),
+        tipo: n?.tipo || 'processo',
       });
+    };
+
+    Object.values(NODES).forEach((n) => registrar(n.id));
+    Object.values(NODES_CATALOGO).forEach((n) => registrar(n.id));
+
+    const visitarRegras = (regras) => {
+      (regras?.decisoes || []).forEach((d) => {
+        registrar(d.no);
+        registrar(d.sim);
+        registrar(d.nao);
+      });
+      (regras?.ligacoes || []).forEach((l) => {
+        registrar(l.de);
+        registrar(l.para);
+      });
+      (regras?.subfluxos || []).forEach((s) => {
+        registrar(s.de);
+        registrar(s.para);
+        (s.passos || []).forEach((id) => registrar(id));
+      });
+    };
+
+    const visitarFluxo = (gf) => {
+      if (!gf) return;
+      (gf.sequenciaPosCredito || []).forEach((id) => registrar(id));
+      visitarRegras(gf.regras);
+      this.ensureDetalhesGrupo(gf);
+      Object.values(gf.processosDetalhados || {}).forEach((pd) => {
+        if (!pd?.cadastrado) return;
+        (pd.sequenciaPosCredito || []).forEach((id) => registrar(id));
+        visitarRegras(pd.regras);
+      });
+    };
+
+    if (grupoId && fluxoId) {
+      visitarFluxo(this.getFluxoDef(grupoId, fluxoId));
     }
 
-    return Object.values(NODES).filter((n) => {
-      if (!n?.id || seq.has(n.id)) return false;
-      if (soSubfluxo.has(n.id)) return false;
-      if (noFluxo.has(n.id)) return true;
-      if (n.exclusivoCliente && !this.isNoEmUso(n.id)) return true;
-      return false;
-    }).map((n) => ({ id: n.id, label: n.label, tipo: n.tipo }));
+    this.forEachFluxoCadastrado((gf) => visitarFluxo(gf));
+
+    Object.values(CLIENT_CUSTOMIZATIONS).forEach((c) => {
+      if (!c) return;
+      (c.extrasNoFim || []).forEach((id) => registrar(id));
+      (c.insercoes || []).forEach((x) => registrar(x.id));
+      visitarRegras(c);
+      this.ensureCustomDetalhes(c);
+      Object.values(c.processosDetalhados || {}).forEach((pd) => {
+        if (!pd?.cadastrado) return;
+        (pd.sequenciaPosCredito || []).forEach((id) => registrar(id));
+        visitarRegras(pd.regras);
+      });
+    });
+
+    return mapa;
   },
 
   forEachFluxoCadastrado(fn) {
@@ -2416,6 +3155,24 @@ const FlowStore = {
       if (seq?.includes(noId)) emAlgumFluxo = true;
     });
     if (emAlgumFluxo) return true;
+
+    let emProcessoDetalhado = false;
+    this.forEachFluxoCadastrado((gf) => {
+      this.ensureDetalhesGrupo(gf);
+      Object.values(gf.processosDetalhados || {}).forEach((pd) => {
+        if (!pd?.cadastrado) return;
+        if ((pd.sequenciaPosCredito || []).includes(noId)) emProcessoDetalhado = true;
+        (pd.regras?.decisoes || []).forEach((d) => {
+          if (d.no === noId || d.sim === noId || d.nao === noId) emProcessoDetalhado = true;
+        });
+        (pd.regras?.subfluxos || []).forEach((s) => {
+          if (s.de === noId || s.para === noId || (s.passos || []).includes(noId)) {
+            emProcessoDetalhado = true;
+          }
+        });
+      });
+    });
+    if (emProcessoDetalhado) return true;
 
     return Object.values(CLIENT_CUSTOMIZATIONS).some((c) => {
       if (!c) return false;
@@ -2488,6 +3245,7 @@ const FlowStore = {
 
   /** Remove do catálogo etapas que não estão em nenhum fluxo/regra. */
   liberarNoSeOrfao(noId) {
+    if (NODES_CATALOGO[noId]) return;
     if (this.isNoEmUso(noId)) return;
     delete NODES[noId];
   },

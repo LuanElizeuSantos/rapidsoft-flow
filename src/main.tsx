@@ -34,10 +34,20 @@ async function boot() {
 
   const grupoUrl = new URLSearchParams(window.location.search).get('grupo');
   const fluxoUrl = new URLSearchParams(window.location.search).get('fluxo');
+  const processoUrl = new URLSearchParams(window.location.search).get('processo');
+  const clienteUrl = new URLSearchParams(window.location.search).get('cliente');
+  const donoProcesso = processoUrl
+    ? FlowStore.resolveDonoProcessoDetalhado(
+      grupoUrl,
+      fluxoUrl || undefined,
+      processoUrl,
+      clienteUrl,
+    )
+    : null;
   if (grupoUrl && GRUPOS.some((g) => g.id === grupoUrl)) {
-    FlowStore.carregarGrupo(grupoUrl, fluxoUrl || undefined);
+    FlowStore.carregarGrupo(grupoUrl, fluxoUrl || undefined, processoUrl ?? undefined, donoProcesso);
   } else {
-    FlowStore.carregarGrupo(GRUPOS[0]?.id, fluxoUrl || undefined);
+    FlowStore.carregarGrupo(GRUPOS[0]?.id, fluxoUrl || undefined, processoUrl ?? undefined, donoProcesso);
   }
 
   const { FlowEditor } = await import('../js/editor.js');

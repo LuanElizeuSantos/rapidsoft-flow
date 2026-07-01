@@ -55,4 +55,7 @@ const NODES = {
   },
 };
 
-export { NODES };
+/** Catálogo fixo de referência — não é apagado ao limpar órfãos. */
+const NODES_CATALOGO = JSON.parse(JSON.stringify(NODES));
+
+export { NODES, NODES_CATALOGO };

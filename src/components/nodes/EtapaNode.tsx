@@ -44,6 +44,9 @@ function EtapaNode({ data, selected }: NodeProps<EtapaNodeType>) {
 
       <div className="rf-node__corpo">
         <span className="rf-node__label">{data.label}</span>
+        {data.temDetalhe && (
+          <span className="rf-node__detalhe-badge" title="Processo detalhado vinculado">↳</span>
+        )}
         {temComentario && (
           <span className="rf-node__comentario" title={data.comentario}>
             {data.comentario}

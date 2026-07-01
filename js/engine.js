@@ -33,6 +33,16 @@ const FlowEngine = {
     }
     const grupo = GRUPOS.find((g) => g.id === FlowStore.getGrupoAtivo());
     const prefixoGrupo = grupo ? `${grupo.nome} · ` : '';
+    if (FlowStore.isModoProcessoDetalhado()) {
+      const macroNome = FlowStore.getFluxoDef(
+        FlowStore.getGrupoAtivo(),
+        FlowStore.getFluxoAtivoId(),
+      )?.nome || 'Fluxo macro';
+      return {
+        titulo: `${prefixoGrupo}${macroNome} → ${BASE_FLOW.nome}`,
+        descricao: BASE_FLOW.descricao || 'Processo detalhado do fluxo macro.',
+      };
+    }
     return {
       titulo: `${prefixoGrupo}${BASE_FLOW.nome}`,
       descricao: BASE_FLOW.descricao,
@@ -52,16 +62,22 @@ const FlowEngine = {
     return no?.tipo === 'decisao' || !!this.getDecisao(clienteId, noId);
   },
 
-  /** Decisão criada/customizada do cliente (≠ bloqueio crédito do sistema). */
+  /** Decisão criada pelo cliente (≠ decisão herdada do padrão; ≠ bloqueio crédito). */
   isDecisaoDoCliente(noId, clienteId) {
     if (clienteId === 'padrao') return false;
     if (!this.isNoDecisao(noId, clienteId)) return false;
     const fork = FlowStore.getCreditFork();
     if (fork && noId === fork.decisao) return false;
-    return (
-      NODES[noId]?.exclusivoCliente === true
-      || this.isEtapaDoCliente(noId, clienteId)
-      || this.getDecisao(clienteId, noId) != null
+
+    const baseIds = new Set(
+      (FlowStore.getRegrasPadrao().decisoes || []).map((d) => d.no),
+    );
+    if (baseIds.has(noId)) return false;
+
+    if (NODES[noId]?.exclusivoCliente === true) return true;
+    if (this.isEtapaDoCliente(noId, clienteId)) return true;
+    return (FlowStore.getCustom(clienteId)?.decisoes || []).some(
+      (d) => d.no === noId,
     );
   },
 

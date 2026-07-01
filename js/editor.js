@@ -5,7 +5,7 @@ import { NODES } from './nodes.js';
 import { CLIENTES } from './flows.js';
 import { FlowStore } from './store.js';
 import { FlowEngine } from './engine.js';
-import { avisar } from './ui-dialog.js';
+import { avisar, confirmarDuplo } from './ui-dialog.js';
 
 const FlowEditor = {
   aberto: false,
@@ -45,7 +45,6 @@ const FlowEditor = {
     this.listaSubfluxos = document.getElementById('lista-subfluxos');
     this.listaPassosSubfluxo = document.getElementById('lista-passos-subfluxo');
     this.listaDecisoes = document.getElementById('lista-decisoes');
-    this.selectEtapa = document.getElementById('select-etapa');
     this.inputNovaEtapa = document.getElementById('input-nova-etapa');
     this.selectNovaEtapaTipo = document.getElementById('select-nova-etapa-tipo');
     this.selectNovaEtapaSubfluxoTipo = document.getElementById('select-nova-etapa-subfluxo-tipo');
@@ -57,6 +56,7 @@ const FlowEditor = {
     this.selectSaltoAncoraTipo = document.getElementById('select-salto-ancora-tipo');
     this.selectSaltoAncoraRef = document.getElementById('select-salto-ancora-ref');
     this.secaoAncoraEtapa = document.getElementById('secao-ancora-etapa');
+    this.dicaPrimeiraEtapa = document.getElementById('dica-primeira-etapa');
     this.selectAncoraTipo = document.getElementById('select-ancora-tipo');
     this.selectAncoraRef = document.getElementById('select-ancora-ref');
     this.selectSubfluxoDe = document.getElementById('select-subfluxo-de');
@@ -73,7 +73,6 @@ const FlowEditor = {
 
     btnManutencao.addEventListener('click', () => this.toggle());
     document.getElementById('btn-fechar-manutencao').addEventListener('click', () => this.fechar());
-    document.getElementById('btn-inserir-etapa').addEventListener('click', () => this.inserirEtapa());
     document.getElementById('btn-criar-etapa').addEventListener('click', () => this.criarEtapa());
     this.selectNovaEtapaTipo?.addEventListener('change', () => this.atualizarFormNovaEtapa());
     this.selectNovaEtapaSubfluxoTipo?.addEventListener('change', () => this.atualizarFormNovaEtapaSubfluxo());
@@ -159,7 +158,7 @@ const FlowEditor = {
     this.clienteId = clienteId;
     const ehCliente = clienteId !== 'padrao';
     const ehPadrao = !ehCliente;
-    if (this.secaoAncoraEtapa) this.secaoAncoraEtapa.hidden = ehPadrao;
+    if (this.secaoAncoraEtapa) this.secaoAncoraEtapa.hidden = false;
 
     const secGatilhos = document.getElementById('secao-gatilhos');
     const dicaRegras = document.getElementById('dica-regras');
@@ -209,13 +208,6 @@ const FlowEditor = {
   },
 
   async inserirEtapaCliente(noId) {
-    const tipo = this.selectAncoraTipo?.value || 'depois';
-    const ref = this.garantirRefAncora(this.selectAncoraRef);
-    if (!ref) {
-      await avisar('Escolha a etapa de referência em "Antes de / Depois de".');
-      return false;
-    }
-
     const seq = FlowStore.getSequenciaPosCredito(this.clienteId);
     if (seq.includes(noId)) {
       await avisar('Esta etapa já faz parte da sequência deste cliente.');
@@ -228,8 +220,31 @@ const FlowEditor = {
       return false;
     }
 
+    if (!seq.length) {
+      if (!c.extrasNoFim) c.extrasNoFim = [];
+      c.extrasNoFim.push(noId);
+      return true;
+    }
+
+    const tipo = this.selectAncoraTipo?.value || 'depois';
+    const ref = this.garantirRefAncora(this.selectAncoraRef);
+    if (!ref) {
+      await avisar('Escolha a etapa de referência em "Antes de / Depois de".');
+      return false;
+    }
+
     FlowStore.inserirNoCliente(this.clienteId, noId, ref, tipo);
     return true;
+  },
+
+  atualizarSecaoAncoraEtapa(seq) {
+    const vazia = !seq?.length;
+    if (this.secaoAncoraEtapa) {
+      this.secaoAncoraEtapa.hidden = vazia;
+    }
+    if (this.dicaPrimeiraEtapa) {
+      this.dicaPrimeiraEtapa.hidden = !vazia;
+    }
   },
 
   notificar() {
@@ -268,11 +283,23 @@ const FlowEditor = {
     });
   },
 
-  optionsEtapas(filtroSeq = false) {
-    const lista = filtroSeq
-      ? FlowStore.getSequenciaPosCredito(this.clienteId).map((id) => NODES[id]).filter(Boolean)
-      : FlowStore.listaEtapasParaInserir(this.clienteId);
-    return lista.map((n) => `<option value="${n.id}">${n.label}</option>`).join('');
+  optionsEtapas() {
+    const lista = FlowStore.getSequenciaPosCredito(this.clienteId)
+      .map((id) => NODES[id])
+      .filter(Boolean);
+    if (!lista.length) return this.opcaoSelecioneHtml();
+    return this.opcaoSelecioneHtml() + lista.map((n) => (
+      `<option value="${n.id}">${n.label}</option>`
+    )).join('');
+  },
+
+  optionsAncoraHtml() {
+    const itens = FlowStore.getEtapasParaRegras(this.clienteId);
+    if (!itens.length) return '';
+    return itens.map((item) => {
+      const sufixo = item.contexto === 'subfluxo' ? ' · ramo' : '';
+      return `<option value="${item.id}">${item.label}${sufixo}</option>`;
+    }).join('');
   },
 
   opcaoSelecioneHtml() {
@@ -337,6 +364,151 @@ const FlowEditor = {
               <select class="input-select input-select--sm" data-decisao-ramo="nao" data-no-id="${noId}">${opts}</select>
             </label>
           </div>`;
+  },
+
+  htmlProcessoDetalhado(etapaId) {
+    if (FlowStore.isModoProcessoDetalhado()) return '';
+
+    const grupoId = FlowStore.getGrupoAtivo();
+    const fluxoId = FlowStore.getFluxoAtivoId();
+    const ctx = FlowStore.resolveContextoProcessoDetalhado(this.clienteId, etapaId);
+
+    if (ctx.escopo === 'macro') {
+      if (this.clienteId !== 'padrao') {
+        const vincPadrao = FlowStore.getProcessoVinculadoEtapa(
+          grupoId,
+          fluxoId,
+          etapaId,
+          'padrao',
+        );
+        if (!vincPadrao) return '';
+        return `
+          <div class="etapa-card__detalhe">
+            <button type="button" class="btn-acao btn-acao--sm"
+              data-abrir-processo="${vincPadrao}" data-processo-dono="padrao">Abrir detalhe Padrão ↳</button>
+          </div>`;
+      }
+
+      const vinculado = FlowStore.getProcessoVinculadoEtapa(grupoId, fluxoId, etapaId, 'padrao');
+      const processos = FlowStore.listarProcessosDetalhados(grupoId, fluxoId, 'padrao');
+      const opcoes = processos
+        .filter((p) => !p.etapaMacroId || p.etapaMacroId === etapaId)
+        .map((p) => (
+          `<option value="${p.id}"${p.id === vinculado ? ' selected' : ''}>${this.escapeHtml(p.nome)}</option>`
+        ))
+        .join('');
+
+      return `
+          <div class="etapa-card__detalhe">
+            <label class="etapa-card__detalhe-linha">
+              <span>Processo detalhado</span>
+              <select class="input-select input-select--sm" data-processo-vinculo data-etapa="${etapaId}" data-processo-dono="padrao">
+                <option value=""${vinculado ? '' : ' selected'}>— nenhum —</option>
+                <option value="__criar__">+ Criar e vincular</option>
+                ${opcoes}
+              </select>
+            </label>
+            ${vinculado ? `<button type="button" class="btn-acao btn-acao--sm" data-abrir-processo="${vinculado}" data-processo-dono="padrao">Abrir ↳</button>` : ''}
+          </div>`;
+    }
+
+    if (!FlowStore.isEtapaDoCliente(etapaId, this.clienteId)) return '';
+
+    const vinculado = FlowStore.getProcessoVinculadoEtapa(
+      grupoId,
+      fluxoId,
+      etapaId,
+      this.clienteId,
+    );
+    const processos = FlowStore.listarProcessosDetalhados(grupoId, fluxoId, this.clienteId);
+    const opcoes = processos
+      .filter((p) => !p.etapaMacroId || p.etapaMacroId === etapaId)
+      .map((p) => (
+        `<option value="${p.id}"${p.id === vinculado ? ' selected' : ''}>${this.escapeHtml(p.nome)}</option>`
+      ))
+      .join('');
+
+    return `
+          <div class="etapa-card__detalhe">
+            <label class="etapa-card__detalhe-linha">
+              <span>Processo detalhado (cliente)</span>
+              <select class="input-select input-select--sm" data-processo-vinculo data-etapa="${etapaId}" data-processo-dono="${this.clienteId}">
+                <option value=""${vinculado ? '' : ' selected'}>— nenhum —</option>
+                <option value="__criar__">+ Criar e vincular</option>
+                ${opcoes}
+              </select>
+            </label>
+            ${vinculado ? `<button type="button" class="btn-acao btn-acao--sm" data-abrir-processo="${vinculado}" data-processo-dono="${this.clienteId}">Abrir ↳</button>` : ''}
+          </div>`;
+  },
+
+  abrirProcessoDetalhe(processoId, donoClienteId = 'padrao') {
+    const grupoId = FlowStore.getGrupoAtivo();
+    const fluxoId = FlowStore.getFluxoAtivoId();
+    if (donoClienteId === 'padrao') {
+      this.setCliente('padrao');
+    } else {
+      this.setCliente(donoClienteId);
+    }
+    FlowStore.carregarProcessoDetalhado(grupoId, fluxoId, processoId, donoClienteId);
+    const url = new URL(window.location.href);
+    url.searchParams.set('processo', processoId);
+    if (donoClienteId === 'padrao') url.searchParams.delete('cliente');
+    else url.searchParams.set('cliente', donoClienteId);
+    window.history.pushState({}, '', url);
+    this.notificar();
+  },
+
+  bindProcessoDetalhado(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-processo-vinculo]').forEach((sel) => {
+      sel.addEventListener('change', async () => {
+        const etapaId = sel.dataset.etapa;
+        const dono = sel.dataset.processoDono || 'padrao';
+        const val = sel.value;
+        const grupoId = FlowStore.getGrupoAtivo();
+        const fluxoId = FlowStore.getFluxoAtivoId();
+
+        if (val === '') {
+          FlowStore.desvincularProcessoDetalhado(grupoId, fluxoId, etapaId, dono);
+          this.renderizar();
+          this.notificar();
+          return;
+        }
+        if (val === '__criar__') {
+          const r = FlowStore.detalharEtapaMacro(grupoId, fluxoId, etapaId, dono);
+          if (!r.ok) {
+            await avisar(r.erro || 'Não foi possível criar o processo.');
+            this.renderizar();
+            return;
+          }
+          if (r.processoId) {
+            this.abrirProcessoDetalhe(r.processoId, r.donoClienteId || dono);
+          } else {
+            this.renderizar();
+            this.notificar();
+          }
+          return;
+        }
+        const r = FlowStore.vincularProcessoDetalhado(grupoId, fluxoId, etapaId, val, dono);
+        if (!r.ok) {
+          await avisar(r.erro || 'Não foi possível vincular.');
+          this.renderizar();
+          return;
+        }
+        this.renderizar();
+        this.notificar();
+      });
+    });
+
+    root.querySelectorAll('[data-abrir-processo]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.abrirProcessoDetalhe(
+          btn.dataset.abrirProcesso,
+          btn.dataset.processoDono || 'padrao',
+        );
+      });
+    });
   },
 
   bindDecisaoRamos(root) {
@@ -424,12 +596,12 @@ const FlowEditor = {
   },
 
   atualizarSelects() {
-    const opts = this.optionsEtapas();
-    const optsSeq = this.optionsEtapas(true);
+    const optsSeq = this.optionsEtapas();
     const optsRegras = FlowStore.getOpcoesEtapasHtml(this.clienteId);
+    const optsAncora = this.optionsAncoraHtml();
     const seq = FlowStore.getSequenciaPosCredito(this.clienteId);
 
-    this.selectEtapa.innerHTML = opts;
+    this.atualizarSecaoAncoraEtapa(seq);
     this.selectSaltoDe.innerHTML = optsRegras || optsSeq;
     this.selectSaltoPara.innerHTML = optsRegras || optsSeq;
     const deAnterior = this.selectSubfluxoDe?.value || '';
@@ -445,22 +617,25 @@ const FlowEditor = {
     this.restaurarSelectValor(this.selectSubfluxoDe, deAnterior);
     this.restaurarSelectValor(this.selectSubfluxoPara, paraAnterior);
     if (this.selectAncoraRef) {
-      this.selectAncoraRef.innerHTML = optsSeq;
-      const refPadrao = seq.includes('listar') ? 'listar' : (seq[0] || '');
+      this.selectAncoraRef.innerHTML = optsAncora || optsSeq;
+      const refPadrao = seq.includes('listar') ? 'listar' : (seq[seq.length - 1] || seq[0] || '');
       if (refPadrao) this.selectAncoraRef.value = refPadrao;
       if (!this.selectAncoraRef.value && this.selectAncoraRef.options.length) {
         this.selectAncoraRef.selectedIndex = 0;
       }
     }
     if (this.selectSaltoAncoraRef) {
-      this.selectSaltoAncoraRef.innerHTML = optsSeq;
-      const refSalto = seq.includes('listar') ? 'listar' : (seq[0] || '');
+      this.selectSaltoAncoraRef.innerHTML = optsAncora || optsSeq;
+      const refSalto = seq.includes('listar') ? 'listar' : (seq[seq.length - 1] || seq[0] || '');
       if (refSalto) this.selectSaltoAncoraRef.value = refSalto;
       if (!this.selectSaltoAncoraRef.value && this.selectSaltoAncoraRef.options.length) {
         this.selectSaltoAncoraRef.selectedIndex = 0;
       }
     }
-    this.selectRetornoCredito.innerHTML = opts;
+    if (this.selectRetornoCredito) {
+      this.selectRetornoCredito.innerHTML = optsSeq;
+      this.selectRetornoCredito.value = FlowStore.getCreditFork()?.retornoPara || '';
+    }
 
     ['select-decisao-sim', 'select-decisao-nao'].forEach((id) => {
       const el = document.getElementById(id);
@@ -494,8 +669,6 @@ const FlowEditor = {
         this.selectDecisaoApos.value = seq[seq.length - 1];
       }
     }
-
-    this.selectRetornoCredito.value = FlowStore.getCreditFork()?.retornoPara || '';
   },
 
   renderizarSistema() {
@@ -537,6 +710,10 @@ const FlowEditor = {
     const cliente = CLIENTES.find((c) => c.id === this.clienteId);
     document.getElementById('manutencao-cliente').textContent = cliente?.nome || this.clienteId;
 
+    if (FlowStore.garantirNosDoFluxo(this.clienteId)) {
+      FlowStore.persistir();
+    }
+
     if (this.clienteId !== 'padrao') {
       if (FlowStore.sanitizarOrfaosCliente(this.clienteId)) {
         FlowStore.persistir();
@@ -554,20 +731,23 @@ const FlowEditor = {
 
     const dicaEtapas = document.querySelector('#tab-etapas > .painel-dica');
     if (dicaEtapas) {
-      if (ehCliente) {
+      if (!seq.length && !ehCliente) {
+        dicaEtapas.textContent = 'Fluxo vazio — crie a primeira etapa em "Adicionar etapa" abaixo.';
+      } else if (ehCliente) {
         dicaEtapas.textContent = 'Etapas do padrão são fixas (não movem). Use ⊘ para pular — só etapas puladas ou órfãs (sem nenhuma regra) ficam pontilhadas no diagrama.';
       } else {
         dicaEtapas.textContent = FlowStore.usaEstruturaFaturamento()
           ? 'Ordem após o crédito. ⊘ pula etapa do padrão neste cliente.'
-          : 'Ordem das etapas do fluxo. ⊘ pula etapa do padrão neste cliente.';
+          : 'Todas as etapas do fluxo. Use a posição em "Adicionar etapa" para inserir antes ou depois de qualquer passo.';
       }
     }
+
+    this.atualizarSecaoAncoraEtapa(seq);
 
     let html = '';
 
     seq.forEach((id, i) => {
-      const no = NODES[id];
-      if (!no) return;
+      const no = NODES[id] || { id, label: id.replace(/-/g, ' ').toUpperCase(), tipo: 'processo' };
 
       const tags = [];
       const ehEtapaPadrao = baseSet.has(id);
@@ -628,6 +808,7 @@ const FlowEditor = {
             <input class="etapa-card__nome" value="${no.label}" data-no-id="${id}" ${ehPadrao ? 'readonly title="Etapa do padrão — não renomeável"' : ''} />
           </div>
           ${this.htmlMetaCampos(no, id)}
+          ${this.htmlProcessoDetalhado(id)}
           ${this.htmlRamosDecisao(id)}
           ${tags.length ? `<div class="etapa-card__tags">${tags.join('')}</div>` : ''}
           <div class="etapa-card__acoes">
@@ -769,8 +950,17 @@ const FlowEditor = {
     this.listaDecisoes.querySelectorAll('[data-remover-decisao]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const noId = btn.dataset.removerDecisao;
-        const c = FlowStore.ensureCustom(this.clienteId);
-        if (c) c.decisoes = c.decisoes.filter((d) => d.no !== noId);
+        if (this.clienteId === 'padrao') {
+          const regras = FlowStore.getRegrasPadrao();
+          regras.decisoes = (regras.decisoes || []).filter((d) => d.no !== noId);
+          const seq = FlowStore.getSequenciaPosCredito('padrao');
+          const i = seq.indexOf(noId);
+          if (i >= 0) FlowStore.removerEtapa('padrao', i);
+          FlowStore.salvarGrupoAtivo();
+        } else {
+          const c = FlowStore.ensureCustom(this.clienteId);
+          if (c) c.decisoes = c.decisoes.filter((d) => d.no !== noId);
+        }
         FlowStore.liberarNoOrfao(noId);
         FlowStore.persistir();
         this.renderizar();
@@ -814,6 +1004,7 @@ const FlowEditor = {
 
     this.bindMetaCampos(this.lista);
     this.bindDecisaoRamos(this.lista);
+    this.bindProcessoDetalhado(this.lista);
 
     this.lista.querySelectorAll('[data-acao]').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -1044,10 +1235,13 @@ const FlowEditor = {
       && n.label === rotulo
       && !FlowStore.isNoEmUso(n.id)
     ));
-    const id = reutilizar?.id || FlowStore.criarEtapa(null, label, 'decisao', true);
+    const id = reutilizar?.id || FlowStore.criarEtapa(null, label, 'decisao', this.clienteId !== 'padrao');
     if (!id) {
       await avisar('Já existe etapa com esse nome em uso em outro fluxo. Renomeie a pergunta (ex.: É JOGO?) ou remova a etapa antiga nas regras.');
       return;
+    }
+    if (this.clienteId === 'padrao' && NODES[id]) {
+      NODES[id].exclusivoCliente = false;
     }
 
     const aposId = this.selectDecisaoApos?.value || null;
@@ -1064,14 +1258,9 @@ const FlowEditor = {
 
     if (subPai) {
       FlowStore.inserirPassoEmSubfluxo(this.clienteId, subPai.de, id, aposReal);
-    } else if (aposId) {
-      FlowStore.inserirNoCliente(this.clienteId, id, aposId);
     } else {
-      const c = FlowStore.ensureCustom(this.clienteId);
-      if (c) {
-        if (!c.extrasNoFim) c.extrasNoFim = [];
-        c.extrasNoFim.push(id);
-      }
+      FlowStore.inserirDecisaoNoFluxo(this.clienteId, id, aposId || null);
+      if (this.clienteId === 'padrao') FlowStore.salvarGrupoAtivo();
     }
 
     FlowStore.adicionarDecisao(this.clienteId, id, sim, nao, aposId || null);
@@ -1083,23 +1272,18 @@ const FlowEditor = {
     this.notificar();
   },
 
-  async inserirEtapa() {
-    const noId = this.selectEtapa.value;
-    if (!noId) return;
-    const seq = FlowStore.getSequenciaPosCredito(this.clienteId);
-    if (this.clienteId === 'padrao') {
-      const ok = await this.tentarInserirEtapaPadrao(noId, seq.length);
-      if (!ok) return;
-      this.atualizarSelects();
-      this.renderizar();
-      this.notificar();
-      return;
+  async inserirEtapaPadraoComAncora(noId) {
+    const seq = FlowStore.getSequenciaPosCredito('padrao');
+    if (!seq.length) {
+      return this.tentarInserirEtapaPadrao(noId, 0);
     }
-    if (!(await this.inserirEtapaCliente(noId))) return;
-    this.registrarDecisaoAposInserir(noId, this.garantirRefAncora(this.selectAncoraRef));
-    this.atualizarSelects();
-    this.renderizar();
-    this.notificar();
+    const { tipo, ref } = this.lerAncoraForm();
+    if (!ref) {
+      await avisar('Escolha a etapa de referência em "Antes de / Depois de".');
+      return false;
+    }
+    const indice = FlowStore.indiceInsercaoPorAncora('padrao', ref, tipo);
+    return this.tentarInserirEtapaPadrao(noId, indice);
   },
 
   async criarEtapa() {
@@ -1114,11 +1298,10 @@ const FlowEditor = {
         return;
       }
 
-      const seq = FlowStore.getSequenciaPosCredito(this.clienteId);
       if (this.clienteId === 'padrao') {
-        const ok = await this.tentarInserirEtapaPadrao(id, seq.length);
+        const ok = await this.inserirEtapaPadraoComAncora(id);
         if (!ok) return;
-        this.registrarDecisaoAposInserir(id);
+        this.registrarDecisaoAposInserir(id, this.garantirRefAncora(this.selectAncoraRef));
         this.inputNovaEtapa.value = '';
         this.atualizarSelects();
         this.renderizar();
@@ -1311,8 +1494,17 @@ const FlowEditor = {
     });
   },
 
-  resetar() {
-    if (confirm('Limpar tudo e voltar ao estado inicial vazio?')) FlowStore.resetar();
+  async resetar() {
+    const ok = await confirmarDuplo(
+      'Limpar tudo e voltar ao estado inicial vazio?\n\n'
+      + 'Serão removidos permanentemente:\n'
+      + '• Todos os grupos e fluxos\n'
+      + '• Todos os clientes\n'
+      + '• Dados não salvos no Git',
+      'Esta ação não pode ser desfeita.\n\n'
+      + 'Confirma que deseja apagar TUDO agora?',
+    );
+    if (ok) FlowStore.resetar();
   },
 };
 

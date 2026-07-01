@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test:store": "node test/store-task1.mjs && node test/store-task2.mjs && node test/store-task3.mjs && node test/store-merge-seq.mjs && npx vite-node test/store-pulada-gatilho.mjs && npx vite-node test/store-pulada-seq-principal.mjs && npx vite-node test/store-subfluxo-seq.mjs && npx vite-node test/store-gatilho-subfluxo.mjs",
+    "test:store": "node test/store-task1.mjs && node test/store-task2.mjs && node test/store-task3.mjs && node test/store-merge-seq.mjs && npx vite-node test/store-pulada-gatilho.mjs && npx vite-node test/store-pulada-seq-principal.mjs && npx vite-node test/store-subfluxo-seq.mjs && npx vite-node test/store-gatilho-subfluxo.mjs && npx vite-node test/store-decisao-nao-linha.mjs && npx vite-node test/store-processo-detalhe-macro.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
