@@ -236,4 +236,4 @@ Documentos passo a passo para testar cenários completos:
 
 ## Licença e repositório
 
-Projeto privado / uso interno Consistem · [GitHub](https://github.com/LuanElizeuSantos/rapidsoft-flow)
+Projeto privado / uso interno Rapidsoft · [GitHub](https://github.com/LuanElizeuSantos/rapidsoft-flow)
