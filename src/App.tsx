@@ -18,15 +18,22 @@ function getGrupoFromUrl(): string | null {
   return p && GRUPOS.some((g) => g.id === p) ? p : null;
 }
 
+function getFluxoFromUrl(): string | null {
+  const p = new URLSearchParams(window.location.search).get('fluxo');
+  return p || null;
+}
+
 function resolveGrupoInicial(): string | null {
   const urlGrupo = getGrupoFromUrl();
+  const urlFluxo = getFluxoFromUrl();
   const grupoId = urlGrupo || GRUPOS[0]?.id || null;
-  FlowStore.carregarGrupo(grupoId);
+  FlowStore.carregarGrupo(grupoId, urlFluxo || undefined);
   return grupoId;
 }
 
 export default function App() {
   const [grupoId, setGrupoId] = useState<string | null>(resolveGrupoInicial);
+  const [fluxoId, setFluxoId] = useState(() => FlowStore.getFluxoAtivoId());
   const [clienteId, setClienteId] = useState(getClienteFromUrl);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -39,10 +46,13 @@ export default function App() {
         return true;
       }
       if (grupoId == null || !FlowStore.clientePertenceGrupo(c.id, grupoId)) return false;
+      if (c.id !== 'padrao' && fluxoId && !FlowStore.clientePertenceFluxo(c.id, grupoId, fluxoId)) {
+        return false;
+      }
       vistos.add(c.id);
       return true;
     });
-  }, [grupoId, refreshKey]);
+  }, [grupoId, fluxoId, refreshKey]);
 
   const meta = useMemo(() => FlowEngine.resolverMetadados(clienteId), [clienteId, refreshKey]);
   const cores = useMemo(() => FlowStore.getCoresCliente(clienteId), [clienteId, refreshKey]);
@@ -51,24 +61,37 @@ export default function App() {
 
   useEffect(() => {
     const grupoParam = getGrupoFromUrl();
+    const fluxoParam = getFluxoFromUrl();
     const ativo = grupoParam || GRUPOS[0]?.id || null;
-    FlowStore.carregarGrupo(ativo);
+    FlowStore.carregarGrupo(ativo, fluxoParam || undefined);
     setGrupoId(ativo);
+    setFluxoId(FlowStore.getFluxoAtivoId());
 
     const grupoLabel = document.getElementById('fluxo-grupo-label');
     if (grupoLabel) {
       const g = ativo ? GRUPOS.find((x) => x.id === ativo) : null;
-      grupoLabel.textContent = g ? `Grupo: ${g.nome}` : '';
+      const fn = ativo ? FlowStore.nomeFluxo(ativo, FlowStore.getFluxoAtivoId()) : '';
+      grupoLabel.textContent = g ? `Grupo: ${g.nome} · ${fn}` : '';
     }
 
     const linkNovoCliente = document.getElementById('link-novo-cliente') as HTMLAnchorElement | null;
     if (linkNovoCliente) {
-      const params = ativo ? `?grupo=${encodeURIComponent(ativo)}` : '';
-      linkNovoCliente.href = `index.html${params}#novo-cliente`;
+      const params = new URLSearchParams();
+      if (ativo) params.set('grupo', ativo);
+      if (FlowStore.getFluxoAtivoId()) params.set('fluxo', FlowStore.getFluxoAtivoId());
+      const qs = params.toString();
+      linkNovoCliente.href = qs ? `index.html?${qs}#novo-cliente` : 'index.html#novo-cliente';
     }
 
     let c = getClienteFromUrl();
     if (c !== 'padrao' && ativo && !FlowStore.clientePertenceGrupo(c, ativo)) {
+      c = 'padrao';
+    }
+    if (
+      c !== 'padrao'
+      && ativo
+      && !FlowStore.clientePertenceFluxo(c, ativo, FlowStore.getFluxoAtivoId())
+    ) {
       c = 'padrao';
     }
     setClienteId(c);

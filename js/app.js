@@ -12,13 +12,20 @@
 
   const params = new URLSearchParams(location.search);
   const grupoParam = params.get('grupo');
+  const fluxoParam = params.get('fluxo');
   if (grupoParam && GRUPOS.some((g) => g.id === grupoParam)) {
-    FlowStore.carregarGrupo(grupoParam);
+    FlowStore.carregarGrupo(grupoParam, fluxoParam || undefined);
   } else {
-    FlowStore.carregarGrupo(GRUPOS[0]?.id);
+    FlowStore.carregarGrupo(GRUPOS[0]?.id, fluxoParam || undefined);
   }
 
   if (clienteAtivo !== 'padrao' && !FlowStore.clientePertenceGrupo(clienteAtivo, FlowStore.getGrupoAtivo())) {
+    clienteAtivo = 'padrao';
+  }
+  if (
+    clienteAtivo !== 'padrao'
+    && !FlowStore.clientePertenceFluxo(clienteAtivo, FlowStore.getGrupoAtivo(), FlowStore.getFluxoAtivoId())
+  ) {
     clienteAtivo = 'padrao';
   }
 

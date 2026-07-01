@@ -35,7 +35,7 @@ GRUPO_FLUXOS[g] = {
 
 FlowStore.grupoAtivo = g;
 FlowStore.carregarGrupo(g);
-BASE_FLOW.sequenciaPosCredito = [...GRUPO_FLUXOS[g].sequenciaPosCredito];
+BASE_FLOW.sequenciaPosCredito = [...FlowStore.getFluxoDef(g, 'padrao').sequenciaPosCredito];
 
 const revisarId = FlowStore.criarEtapa(null, 'REVISAR CATÁLOGO', 'processo', true);
 const conferirJogosId = FlowStore.criarEtapa(null, 'CONFERIR JOGOS', 'processo', true);

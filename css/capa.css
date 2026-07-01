@@ -127,6 +127,12 @@
   max-width: 420px;
   width: calc(100% - 2rem);
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+  /* reset global zera margin — sem isso o dialog fica no canto */
+  margin: auto;
+}
+
+.capa-dialog:modal {
+  margin: auto;
 }
 
 .capa-dialog::backdrop {
@@ -184,6 +190,17 @@
   font-size: 0.85rem;
   color: var(--cor-texto-suave);
   margin-top: -0.35rem;
+}
+
+.capa-dialog__mensagem {
+  font-size: 0.95rem;
+  line-height: 1.45;
+  margin: 0;
+  white-space: pre-line;
+}
+
+.capa-dialog--confirm .capa-dialog__form {
+  padding-top: 1.35rem;
 }
 
 .capa-secao__dica {
@@ -307,6 +324,18 @@
   text-align: center;
   border: 1px dashed var(--cor-borda);
   border-radius: var(--raio);
+}
+
+.capa-card--ativo {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px #2563eb22;
+}
+
+.capa-campo--inline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 180px;
 }
 
 @media (max-width: 520px) {

@@ -38,17 +38,23 @@
         <div class="capa-secao__topo capa-secao__topo--com-acao">
           <div>
             <h2>Fluxos do grupo</h2>
-            <p class="capa-secao__dica">Cadastre o fluxo padrão deste grupo — base herdada pelos clientes.</p>
+            <p class="capa-secao__dica">Cadastre um ou mais processos do grupo (ex.: Criar pedido, Conferir…). Cada um tem seu diagrama e seus clientes.</p>
           </div>
-          <button type="button" class="btn-acao btn-acao--primario" id="btn-abrir-dialog-fluxo" hidden>+ Cadastrar fluxo padrão</button>
+          <button type="button" class="btn-acao btn-acao--primario" id="btn-abrir-dialog-fluxo" hidden>+ Cadastrar fluxo</button>
         </div>
         <div id="lista-fluxos" class="capa-cards"></div>
       </section>
 
-      <section class="capa-secao">
-        <div class="capa-secao__topo">
-          <h2>Clientes do grupo</h2>
-          <p class="capa-secao__dica">Clientes visíveis neste grupo. Um cliente pode pertencer a vários grupos ou a todos.</p>
+      <section class="capa-secao" id="secao-clientes-fluxo">
+        <div class="capa-secao__topo capa-secao__topo--com-acao">
+          <div>
+            <h2 id="titulo-clientes-fluxo">Clientes do fluxo</h2>
+            <p class="capa-secao__dica">Cada cliente pertence a um fluxo do grupo. Use o seletor para trocar.</p>
+          </div>
+          <div class="capa-campo capa-campo--inline">
+            <label for="select-fluxo-clientes">Fluxo</label>
+            <select id="select-fluxo-clientes" class="input-select"></select>
+          </div>
         </div>
         <div id="lista-clientes" class="capa-cards"></div>
 
@@ -64,6 +70,10 @@
                 <label for="input-cliente-cor">Cor no diagrama</label>
                 <input type="color" id="input-cliente-cor" class="input-cor" value="#2563eb">
               </div>
+            </div>
+            <div class="capa-campo">
+              <label for="select-fluxo-novo-cliente">Fluxo neste grupo</label>
+              <select id="select-fluxo-novo-cliente" class="input-select"></select>
             </div>
             <div class="capa-campo">
               <label for="input-cliente-descricao">Descrição (opcional)</label>
@@ -111,11 +121,11 @@
 
   <dialog id="dialog-fluxo" class="capa-dialog">
     <form id="form-fluxo" class="capa-dialog__form">
-      <h3>Cadastrar fluxo padrão</h3>
+      <h3>Cadastrar fluxo</h3>
       <p id="dialog-fluxo-grupo" class="capa-dialog__subtitulo"></p>
       <div class="capa-campo">
         <label for="input-fluxo-nome">Nome do fluxo</label>
-        <input type="text" id="input-fluxo-nome" class="input-texto" placeholder="Ex: Fluxo padrão" value="Fluxo padrão" required>
+        <input type="text" id="input-fluxo-nome" class="input-texto" placeholder="Ex: Fluxo padrão" required>
       </div>
       <div class="capa-campo">
         <label for="input-fluxo-descricao">Descrição (opcional)</label>
@@ -130,7 +140,7 @@
 
   <dialog id="dialog-editar-fluxo" class="capa-dialog">
     <form id="form-editar-fluxo" class="capa-dialog__form">
-      <h3>Editar fluxo padrão</h3>
+      <h3>Editar fluxo</h3>
       <p id="dialog-editar-fluxo-grupo" class="capa-dialog__subtitulo"></p>
       <div class="capa-campo">
         <label for="input-editar-fluxo-nome">Nome do fluxo</label>
@@ -148,6 +158,25 @@
         </div>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="dialog-confirm" class="capa-dialog capa-dialog--confirm">
+    <div class="capa-dialog__form">
+      <p id="dialog-confirm-mensagem" class="capa-dialog__mensagem"></p>
+      <div class="capa-dialog__acoes">
+        <button type="button" class="btn-acao" id="btn-confirm-nao">Não</button>
+        <button type="button" class="btn-acao btn-acao--primario" id="btn-confirm-sim">Sim</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="dialog-aviso" class="capa-dialog ui-dialog">
+    <div class="ui-dialog__form">
+      <p id="dialog-aviso-mensagem" class="ui-dialog__mensagem"></p>
+      <div class="ui-dialog__acoes">
+        <button type="button" class="btn-acao btn-acao--primario" id="btn-aviso-ok">OK</button>
+      </div>
+    </div>
   </dialog>
 
   <script type="module" src="js/capa-bootstrap.js"></script>

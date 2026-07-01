@@ -81,9 +81,17 @@
             </div>
           </div>
           <div class="painel-campo">
+            <label for="select-nova-etapa-tipo">Tipo</label>
+            <select id="select-nova-etapa-tipo" class="input-select">
+              <option value="processo">Processo</option>
+              <option value="decisao">Decisão</option>
+            </select>
+          </div>
+          <div class="painel-campo">
             <label for="input-nova-etapa">Criar nova</label>
             <input type="text" id="input-nova-etapa" class="input-texto" placeholder="Nome da etapa">
-            <button type="button" class="btn-acao btn-acao--block" id="btn-criar-etapa">Criar</button>
+            <button type="button" class="btn-acao btn-acao--block" id="btn-criar-etapa">Criar etapa</button>
+            <p class="painel-dica painel-dica--inline">Decisões entram na sequência; ligue SIM/NÃO depois, conforme adicionar mais etapas.</p>
           </div>
           <div class="painel-campo">
             <label for="select-etapa">Inserir existente</label>
@@ -142,6 +150,11 @@
             <ul id="lista-passos-subfluxo" class="lista-regras lista-passos-subfluxo">
               <li class="regra-item regra-item--vazio">Nenhum passo</li>
             </ul>
+            <label for="select-nova-etapa-subfluxo-tipo">Tipo</label>
+            <select id="select-nova-etapa-subfluxo-tipo" class="input-select">
+              <option value="processo">Processo</option>
+              <option value="decisao">Decisão</option>
+            </select>
             <label for="input-nova-etapa-subfluxo">Adicionar etapa</label>
             <input type="text" id="input-nova-etapa-subfluxo" class="input-texto" placeholder="Nome da etapa">
             <button type="button" class="btn-acao btn-acao--block" id="btn-criar-etapa-subfluxo">Adicionar ao fluxo</button>
@@ -171,13 +184,14 @@
             <input type="text" id="input-decisao-label" class="input-texto" placeholder="Ex: TEM JOGO?">
           </div>
           <div class="painel-campo">
-            <label for="select-decisao-sim">SIM →</label>
+            <label for="select-decisao-sim">SIM → (opcional)</label>
             <select id="select-decisao-sim" class="input-select"></select>
           </div>
           <div class="painel-campo">
-            <label for="select-decisao-nao">NÃO →</label>
+            <label for="select-decisao-nao">NÃO → (opcional)</label>
             <select id="select-decisao-nao" class="input-select"></select>
           </div>
+          <p class="painel-dica painel-dica--inline">Destinos SIM/NÃO podem ficar em branco e ser ligados depois na aba Etapas.</p>
           <button type="button" class="btn-acao btn-acao--block" id="btn-criar-decisao">Criar decisão</button>
         </div>
       </div>
@@ -201,6 +215,15 @@
         <button type="submit" class="btn-acao btn-acao--primario">Confirmar</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="dialog-aviso" class="ui-dialog">
+    <div class="ui-dialog__form">
+      <p id="dialog-aviso-mensagem" class="ui-dialog__mensagem"></p>
+      <div class="ui-dialog__acoes">
+        <button type="button" class="btn-acao btn-acao--primario" id="btn-aviso-ok">OK</button>
+      </div>
+    </div>
   </dialog>
 
   <script type="module" src="/src/main.tsx"></script>

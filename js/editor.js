@@ -5,6 +5,7 @@ import { NODES } from './nodes.js';
 import { CLIENTES } from './flows.js';
 import { FlowStore } from './store.js';
 import { FlowEngine } from './engine.js';
+import { avisar } from './ui-dialog.js';
 
 const FlowEditor = {
   aberto: false,
@@ -46,6 +47,8 @@ const FlowEditor = {
     this.listaDecisoes = document.getElementById('lista-decisoes');
     this.selectEtapa = document.getElementById('select-etapa');
     this.inputNovaEtapa = document.getElementById('input-nova-etapa');
+    this.selectNovaEtapaTipo = document.getElementById('select-nova-etapa-tipo');
+    this.selectNovaEtapaSubfluxoTipo = document.getElementById('select-nova-etapa-subfluxo-tipo');
     this.selectSaltoDe = document.getElementById('select-salto-de');
     this.selectSaltoPara = document.getElementById('select-salto-para');
     this.saltoBlocoExistente = document.getElementById('salto-bloco-existente');
@@ -72,7 +75,9 @@ const FlowEditor = {
     document.getElementById('btn-fechar-manutencao').addEventListener('click', () => this.fechar());
     document.getElementById('btn-inserir-etapa').addEventListener('click', () => this.inserirEtapa());
     document.getElementById('btn-criar-etapa').addEventListener('click', () => this.criarEtapa());
-    document.getElementById('btn-adicionar-salto').addEventListener('click', () => this.adicionarSalto());
+    this.selectNovaEtapaTipo?.addEventListener('change', () => this.atualizarFormNovaEtapa());
+    this.selectNovaEtapaSubfluxoTipo?.addEventListener('change', () => this.atualizarFormNovaEtapaSubfluxo());
+    document.getElementById('btn-adicionar-salto').addEventListener('click', () => { void this.adicionarSalto(); });
     this.painel.querySelectorAll('input[name="salto-modo"]').forEach((radio) => {
       radio.addEventListener('change', () => this.atualizarModoSalto());
     });
@@ -83,7 +88,7 @@ const FlowEditor = {
       this.definirVoltaSubfluxoPadrao();
     });
     this.selectSubfluxoPara?.addEventListener('change', () => this.limparErroSubfluxo());
-    document.getElementById('btn-criar-decisao').addEventListener('click', () => this.criarDecisao());
+    document.getElementById('btn-criar-decisao').addEventListener('click', () => { void this.criarDecisao(); });
     document.getElementById('btn-salvar').addEventListener('click', () => this.salvar());
     document.getElementById('btn-exportar').addEventListener('click', () => this.exportar());
     document.getElementById('btn-resetar').addEventListener('click', () => this.resetar());
@@ -115,6 +120,8 @@ const FlowEditor = {
 
     this.atualizarModoSalto();
     this.atualizarSelects();
+    this.atualizarFormNovaEtapa();
+    this.atualizarFormNovaEtapaSubfluxo();
   },
 
   mudarTab(tab) {
@@ -201,23 +208,23 @@ const FlowEditor = {
     return null;
   },
 
-  inserirEtapaCliente(noId) {
+  async inserirEtapaCliente(noId) {
     const tipo = this.selectAncoraTipo?.value || 'depois';
     const ref = this.garantirRefAncora(this.selectAncoraRef);
     if (!ref) {
-      alert('Escolha a etapa de referência em "Antes de / Depois de".');
+      await avisar('Escolha a etapa de referência em "Antes de / Depois de".');
       return false;
     }
 
     const seq = FlowStore.getSequenciaPosCredito(this.clienteId);
     if (seq.includes(noId)) {
-      alert('Esta etapa já faz parte da sequência deste cliente.');
+      await avisar('Esta etapa já faz parte da sequência deste cliente.');
       return false;
     }
 
     const c = FlowStore.ensureCustom(this.clienteId);
     if (!c) {
-      alert('Este cliente não permite customização de etapas.');
+      await avisar('Este cliente não permite customização de etapas.');
       return false;
     }
 
@@ -276,6 +283,87 @@ const FlowEditor = {
     return `<option value="${FlowStore.SUBFLUXO_SEM_RETORNO}">— sem retorno (fim do ramo) —</option>`;
   },
 
+  opcaoDefinirDepoisHtml() {
+    return '<option value="">— definir depois —</option>';
+  },
+
+  opcoesDestinoDecisaoHtml() {
+    const opts = FlowStore.getOpcoesDestinoDecisaoHtml(this.clienteId);
+    return this.opcaoDefinirDepoisHtml() + (opts || '');
+  },
+
+  tipoNovaEtapa(selectEl) {
+    return selectEl?.value === 'decisao' ? 'decisao' : 'processo';
+  },
+
+  atualizarFormNovaEtapa() {
+    const ehDecisao = this.tipoNovaEtapa(this.selectNovaEtapaTipo) === 'decisao';
+    if (this.inputNovaEtapa) {
+      this.inputNovaEtapa.placeholder = ehDecisao ? 'Pergunta (ex.: TEM JOGO?)' : 'Nome da etapa';
+    }
+    const btn = document.getElementById('btn-criar-etapa');
+    if (btn) btn.textContent = ehDecisao ? 'Criar decisão' : 'Criar etapa';
+  },
+
+  atualizarFormNovaEtapaSubfluxo() {
+    const ehDecisao = this.tipoNovaEtapa(this.selectNovaEtapaSubfluxoTipo) === 'decisao';
+    if (this.inputNovaEtapaSubfluxo) {
+      this.inputNovaEtapaSubfluxo.placeholder = ehDecisao
+        ? 'Pergunta (ex.: TEM JOGO?)'
+        : 'Nome da etapa';
+    }
+    const btn = document.getElementById('btn-criar-etapa-subfluxo');
+    if (btn) btn.textContent = ehDecisao ? 'Adicionar decisão' : 'Adicionar ao fluxo';
+  },
+
+  registrarDecisaoAposInserir(noId, apos = null) {
+    if (!noId || NODES[noId]?.tipo !== 'decisao') return;
+    const jaExiste = FlowStore.getDecisoes(this.clienteId).some((d) => d.no === noId);
+    if (jaExiste) return;
+    FlowStore.adicionarDecisao(this.clienteId, noId, null, null, apos);
+  },
+
+  htmlRamosDecisao(noId) {
+    if (!FlowEngine.isNoDecisao(noId, this.clienteId)) return '';
+    const opts = this.opcoesDestinoDecisaoHtml();
+    return `
+          <div class="etapa-card__decisao-ramos">
+            <label class="etapa-card__decisao-linha">
+              <span>SIM →</span>
+              <select class="input-select input-select--sm" data-decisao-ramo="sim" data-no-id="${noId}">${opts}</select>
+            </label>
+            <label class="etapa-card__decisao-linha">
+              <span>NÃO →</span>
+              <select class="input-select input-select--sm" data-decisao-ramo="nao" data-no-id="${noId}">${opts}</select>
+            </label>
+          </div>`;
+  },
+
+  bindDecisaoRamos(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-decisao-ramo]').forEach((sel) => {
+      const noId = sel.dataset.noId;
+      const ramo = sel.dataset.decisaoRamo;
+      const dec = FlowEngine.getDecisao(this.clienteId, noId);
+      const valorAtual = dec?.[ramo] || '';
+      if (valorAtual && Array.from(sel.options).some((o) => o.value === valorAtual)) {
+        sel.value = valorAtual;
+      } else {
+        sel.value = '';
+      }
+
+      sel.addEventListener('change', () => {
+        const atual = FlowEngine.getDecisao(this.clienteId, noId);
+        const sim = ramo === 'sim' ? (sel.value || null) : (atual?.sim || null);
+        const nao = ramo === 'nao' ? (sel.value || null) : (atual?.nao || null);
+        FlowStore.atualizarVinculosDecisao(this.clienteId, noId, { sim, nao });
+        FlowStore.persistir();
+        this.renderizarDecisoes();
+        this.notificar();
+      });
+    });
+  },
+
   limparErroSubfluxo() {
     if (!this.subfluxoFormErro) return;
     this.subfluxoFormErro.hidden = true;
@@ -284,7 +372,7 @@ const FlowEditor = {
 
   mostrarErroSubfluxo(mensagem) {
     if (!this.subfluxoFormErro) {
-      alert(mensagem);
+      void avisar(mensagem);
       return;
     }
     this.subfluxoFormErro.textContent = mensagem;
@@ -377,9 +465,8 @@ const FlowEditor = {
     ['select-decisao-sim', 'select-decisao-nao'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) {
-        el.innerHTML = FlowStore.getOpcoesDestinoDecisaoHtml(this.clienteId)
-          || optsRegras
-          || opts;
+        el.innerHTML = this.opcoesDestinoDecisaoHtml()
+          || this.opcaoDefinirDepoisHtml();
       }
     });
 
@@ -541,6 +628,7 @@ const FlowEditor = {
             <input class="etapa-card__nome" value="${no.label}" data-no-id="${id}" ${ehPadrao ? 'readonly title="Etapa do padrão — não renomeável"' : ''} />
           </div>
           ${this.htmlMetaCampos(no, id)}
+          ${this.htmlRamosDecisao(id)}
           ${tags.length ? `<div class="etapa-card__tags">${tags.join('')}</div>` : ''}
           <div class="etapa-card__acoes">
             <button type="button" class="btn-icon" data-acao="subir" ${!podeMover || i === 0 ? 'disabled' : ''} title="${ehPadrao ? 'Etapa do padrão' : 'Subir'}">↑</button>
@@ -649,6 +737,7 @@ const FlowEditor = {
 
   renderizarDecisoes() {
     const decisoes = FlowStore.getDecisoes(this.clienteId);
+    const opts = this.opcoesDestinoDecisaoHtml();
     this.listaDecisoes.innerHTML = decisoes.length
       ? decisoes.map((d) => {
         const ancora = FlowStore.getAncoraEtapa(d.no, this.clienteId);
@@ -656,15 +745,26 @@ const FlowEditor = {
           ? ` <small>· em ${ancora.label}</small>`
           : '';
         return `
-        <li class="regra-item">
+        <li class="regra-item regra-item--decisao">
           <div class="regra-item__texto">
             <strong>${NODES[d.no]?.label || d.no}</strong>${ctx}
-            <small>NÃO → ${NODES[d.nao]?.label || '—'} · SIM → ${NODES[d.sim]?.label || '—'}</small>
+          </div>
+          <div class="regra-item__decisao-ramos">
+            <label class="etapa-card__decisao-linha">
+              <span>SIM →</span>
+              <select class="input-select input-select--sm" data-decisao-ramo="sim" data-no-id="${d.no}">${opts}</select>
+            </label>
+            <label class="etapa-card__decisao-linha">
+              <span>NÃO →</span>
+              <select class="input-select input-select--sm" data-decisao-ramo="nao" data-no-id="${d.no}">${opts}</select>
+            </label>
           </div>
           <button type="button" class="btn-icon btn-icon--danger" data-remover-decisao="${d.no}">✕</button>
         </li>`;
       }).join('')
       : '<li class="regra-item regra-item--vazio">Nenhuma decisão</li>';
+
+    this.bindDecisaoRamos(this.listaDecisoes);
 
     this.listaDecisoes.querySelectorAll('[data-remover-decisao]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -713,6 +813,7 @@ const FlowEditor = {
     });
 
     this.bindMetaCampos(this.lista);
+    this.bindDecisaoRamos(this.lista);
 
     this.lista.querySelectorAll('[data-acao]').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -788,7 +889,7 @@ const FlowEditor = {
     this.bindMetaCampos(this.listaEtapasAuxiliares);
   },
 
-  adicionarSalto() {
+  async adicionarSalto() {
     const para = this.selectSaltoPara.value;
     if (!para) return;
 
@@ -800,26 +901,26 @@ const FlowEditor = {
       const tipo = this.selectSaltoAncoraTipo?.value || 'depois';
       const ref = this.garantirRefAncora(this.selectSaltoAncoraRef);
       if (!label || !ref) {
-        alert('Informe o nome da etapa e a posição (antes/depois de).');
+        await avisar('Informe o nome da etapa e a posição (antes/depois de).');
         return;
       }
 
       de = FlowStore.criarEtapa(null, label, 'processo', true);
       if (!de) {
-        alert('Já existe uma etapa com esse nome.');
+        await avisar('Já existe uma etapa com esse nome.');
         return;
       }
 
       const seq = FlowStore.getSequenciaPosCredito(this.clienteId);
       if (seq.includes(de)) {
-        alert('Esta etapa já faz parte da sequência deste cliente.');
+        await avisar('Esta etapa já faz parte da sequência deste cliente.');
         FlowStore.liberarNoOrfao(de);
         return;
       }
 
       const c = FlowStore.ensureCustom(this.clienteId);
       if (!c) {
-        alert('Este cliente não permite customização de etapas.');
+        await avisar('Este cliente não permite customização de etapas.');
         FlowStore.liberarNoOrfao(de);
         return;
       }
@@ -861,19 +962,22 @@ const FlowEditor = {
     const existente = Object.values(NODES).find((n) => n?.label === rotulo);
     if (existente && !FlowStore.isNoEmUso(existente.id)) {
       if (!this.adicionarPassoSubfluxo(existente.id)) return;
+      this.registrarDecisaoAposInserir(existente.id);
       this.inputNovaEtapaSubfluxo.value = '';
       this.inputNovaEtapaSubfluxo.focus();
       this.atualizarSelects();
       return;
     }
 
-    const id = FlowStore.criarEtapa(null, label, 'processo', this.clienteId !== 'padrao');
+    const id = FlowStore.criarEtapa(null, label, this.tipoNovaEtapa(this.selectNovaEtapaSubfluxoTipo), this.clienteId !== 'padrao');
     if (!id) {
       this.mostrarErroSubfluxo('Já existe uma etapa com esse nome em uso no fluxo.');
       return;
     }
 
     if (!this.adicionarPassoSubfluxo(id)) return;
+
+    this.registrarDecisaoAposInserir(id);
 
     this.inputNovaEtapaSubfluxo.value = '';
     this.inputNovaEtapaSubfluxo.focus();
@@ -925,11 +1029,11 @@ const FlowEditor = {
     this.notificar();
   },
 
-  criarDecisao() {
+  async criarDecisao() {
     const label = document.getElementById('input-decisao-label').value.trim();
-    const sim = document.getElementById('select-decisao-sim').value;
-    const nao = document.getElementById('select-decisao-nao').value;
-    if (!label || !sim || !nao) return;
+    const sim = document.getElementById('select-decisao-sim').value || null;
+    const nao = document.getElementById('select-decisao-nao').value || null;
+    if (!label) return;
 
     const rotulo = label.toUpperCase();
     if (this.clienteId !== 'padrao') {
@@ -942,7 +1046,7 @@ const FlowEditor = {
     ));
     const id = reutilizar?.id || FlowStore.criarEtapa(null, label, 'decisao', true);
     if (!id) {
-      alert('Já existe etapa com esse nome em uso em outro fluxo. Renomeie a pergunta (ex.: É JOGO?) ou remova a etapa antiga nas regras.');
+      await avisar('Já existe etapa com esse nome em uso em outro fluxo. Renomeie a pergunta (ex.: É JOGO?) ou remova a etapa antiga nas regras.');
       return;
     }
 
@@ -991,7 +1095,8 @@ const FlowEditor = {
       this.notificar();
       return;
     }
-    if (!this.inserirEtapaCliente(noId)) return;
+    if (!(await this.inserirEtapaCliente(noId))) return;
+    this.registrarDecisaoAposInserir(noId, this.garantirRefAncora(this.selectAncoraRef));
     this.atualizarSelects();
     this.renderizar();
     this.notificar();
@@ -1002,9 +1107,10 @@ const FlowEditor = {
       const label = this.inputNovaEtapa.value.trim();
       if (!label) return;
 
-      const id = FlowStore.criarEtapa(null, label, 'processo', this.clienteId !== 'padrao');
+      const tipo = this.tipoNovaEtapa(this.selectNovaEtapaTipo);
+      const id = FlowStore.criarEtapa(null, label, tipo, this.clienteId !== 'padrao');
       if (!id) {
-        alert('Já existe uma etapa com esse identificador.');
+        await avisar('Já existe uma etapa com esse identificador.');
         return;
       }
 
@@ -1012,23 +1118,26 @@ const FlowEditor = {
       if (this.clienteId === 'padrao') {
         const ok = await this.tentarInserirEtapaPadrao(id, seq.length);
         if (!ok) return;
+        this.registrarDecisaoAposInserir(id);
         this.inputNovaEtapa.value = '';
         this.atualizarSelects();
         this.renderizar();
         this.notificar();
         return;
       }
-      if (!this.inserirEtapaCliente(id)) {
+      const refAncora = this.garantirRefAncora(this.selectAncoraRef);
+      if (!(await this.inserirEtapaCliente(id))) {
         FlowStore.liberarNoOrfao(id);
         return;
       }
+      this.registrarDecisaoAposInserir(id, refAncora);
       this.inputNovaEtapa.value = '';
       this.atualizarSelects();
       this.renderizar();
       this.notificar();
     } catch (err) {
       console.error(err);
-      alert(`Erro ao criar etapa: ${err.message}`);
+      await avisar(`Erro ao criar etapa: ${err.message}`);
     }
   },
 
@@ -1177,7 +1286,7 @@ const FlowEditor = {
     if (!ok) return;
     FlowStore.salvarGrupoAtivo();
     FlowStore.persistir();
-    alert('Fluxo salvo no navegador.');
+    await avisar('Fluxo salvo no navegador.');
     this.renderizar();
     this.notificar();
   },
@@ -1195,10 +1304,10 @@ const FlowEditor = {
     link.click();
     URL.revokeObjectURL(url);
 
-    navigator.clipboard.writeText(json).then(() => {
-      alert(`JSON exportado (${nomeArquivo}) e copiado para a área de transferência.`);
-    }).catch(() => {
-      alert(`JSON exportado: ${nomeArquivo}`);
+    navigator.clipboard.writeText(json).then(async () => {
+      await avisar(`JSON exportado (${nomeArquivo}) e copiado para a área de transferência.`);
+    }).catch(async () => {
+      await avisar(`JSON exportado: ${nomeArquivo}`);
     });
   },
 

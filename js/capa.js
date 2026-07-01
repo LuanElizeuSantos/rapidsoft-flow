@@ -3,11 +3,14 @@
  */
 import { FlowStore } from './store.js';
 import { GRUPOS, CLIENTES, CLIENT_CUSTOMIZATIONS } from './flows.js';
+import { avisar, initUiDialog } from './ui-dialog.js';
 
 const CapaApp = {
   grupoSelecionado: null,
+  fluxoSelecionado: null,
   editandoClienteId: null,
   editandoGrupoId: null,
+  editandoFluxoId: null,
 
   init() {
     const grupoUrl = new URLSearchParams(window.location.search).get('grupo');
@@ -31,23 +34,37 @@ const CapaApp = {
     this.formFluxo = document.getElementById('form-fluxo');
     this.dialogEditarFluxo = document.getElementById('dialog-editar-fluxo');
     this.formEditarFluxo = document.getElementById('form-editar-fluxo');
+    this.dialogConfirm = document.getElementById('dialog-confirm');
     this.btnCadastrarFluxo = document.getElementById('btn-abrir-dialog-fluxo');
     this.btnEditarGrupo = document.getElementById('btn-editar-grupo');
+    this.selectFluxoClientes = document.getElementById('select-fluxo-clientes');
+    this.selectFluxoNovoCliente = document.getElementById('select-fluxo-novo-cliente');
 
-    document.getElementById('btn-exportar-tudo').addEventListener('click', () => {
+    initUiDialog();
+
+    document.getElementById('btn-exportar-tudo').addEventListener('click', async () => {
       const json = FlowStore.exportarJSON();
-      navigator.clipboard.writeText(json).then(() => alert('JSON copiado.'))
-        .catch(() => prompt('Copie:', json));
+      const hoje = new Date().toISOString().slice(0, 10);
+      const nomeArquivo = `consistem-flow-${hoje}.json`;
+      try {
+        await navigator.clipboard.writeText(json);
+        await avisar(`JSON exportado (${nomeArquivo}) e copiado para a área de transferência.`);
+      } catch {
+        await avisar(`JSON exportado: ${nomeArquivo}`);
+      }
     });
 
     document.getElementById('btn-resetar-tudo').addEventListener('click', () => {
-      if (confirm('Limpar tudo e voltar ao estado inicial vazio?\n\nRemove grupos, fluxos, clientes e dados salvos no navegador.')) {
-        FlowStore.resetar();
-      }
+      this.limparTudoComConfirmacao();
     });
 
     this.selectGrupo?.addEventListener('change', () => {
       this.selecionarGrupo(this.selectGrupo.value);
+    });
+
+    this.selectFluxoClientes?.addEventListener('change', () => {
+      this.fluxoSelecionado = this.selectFluxoClientes.value;
+      this.renderizarClientes();
     });
 
     document.getElementById('btn-abrir-dialog-grupo')?.addEventListener('click', () => {
@@ -66,9 +83,9 @@ const CapaApp = {
       this.excluirGrupo();
     });
 
-    this.formGrupo.addEventListener('submit', (e) => {
+    this.formGrupo.addEventListener('submit', async (e) => {
       e.preventDefault();
-      this.salvarGrupo();
+      await this.salvarGrupo();
     });
 
     this.btnCadastrarFluxo?.addEventListener('click', () => this.abrirDialogFluxo());
@@ -94,15 +111,15 @@ const CapaApp = {
       this.excluirFluxoPadrao();
     });
 
-    this.formEditarFluxo.addEventListener('submit', (e) => {
+    this.formEditarFluxo.addEventListener('submit', async (e) => {
       e.preventDefault();
-      this.salvarEdicaoFluxo();
+      await this.salvarEdicaoFluxo();
     });
 
-    this.formCliente.addEventListener('submit', (e) => {
+    this.formCliente.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (this.editandoClienteId) this.salvarEdicaoCliente();
-      else this.cadastrarCliente();
+      if (this.editandoClienteId) await this.salvarEdicaoCliente();
+      else await this.cadastrarCliente();
     });
 
     document.querySelectorAll('input[name="cliente-grupos-modo"]').forEach((radio) => {
@@ -111,6 +128,57 @@ const CapaApp = {
 
     this.renderizar();
     this.focusNovoClienteSeNecessario();
+    this.initConfirmDialog();
+  },
+
+  _confirmResolve: null,
+
+  initConfirmDialog() {
+    const btnSim = document.getElementById('btn-confirm-sim');
+    const btnNao = document.getElementById('btn-confirm-nao');
+    btnSim?.addEventListener('click', () => {
+      this.dialogConfirm?.close();
+      this._confirmResolve?.(true);
+      this._confirmResolve = null;
+    });
+    btnNao?.addEventListener('click', () => {
+      this.dialogConfirm?.close();
+      this._confirmResolve?.(false);
+      this._confirmResolve = null;
+    });
+    this.dialogConfirm?.addEventListener('cancel', () => {
+      this._confirmResolve?.(false);
+      this._confirmResolve = null;
+    });
+  },
+
+  confirmarCapa(mensagem) {
+    const el = document.getElementById('dialog-confirm-mensagem');
+    if (el) el.textContent = mensagem;
+    return new Promise((resolve) => {
+      this._confirmResolve = resolve;
+      this.dialogConfirm?.showModal();
+    });
+  },
+
+  async limparTudoComConfirmacao() {
+    const passo1 = await this.confirmarCapa(
+      'Limpar tudo e voltar ao estado inicial vazio?\n\n'
+      + 'Serão removidos permanentemente:\n'
+      + '• Todos os grupos\n'
+      + '• Todos os fluxos\n'
+      + '• Todos os clientes\n'
+      + '• Dados sem commit',
+    );
+    if (!passo1) return;
+
+    const passo2 = await this.confirmarCapa(
+      'Esta ação não pode ser desfeita.\n\n'
+      + 'Confirma que deseja apagar TUDO agora?',
+    );
+    if (!passo2) return;
+
+    FlowStore.resetar();
   },
 
   focusNovoClienteSeNecessario() {
@@ -142,7 +210,9 @@ const CapaApp = {
   selecionarGrupo(grupoId) {
     if (!GRUPOS.some((g) => g.id === grupoId)) return;
     this.grupoSelecionado = grupoId;
-    FlowStore.carregarGrupo(grupoId);
+    const fluxos = FlowStore.listarFluxos(grupoId);
+    this.fluxoSelecionado = fluxos[0]?.id || null;
+    FlowStore.carregarGrupo(grupoId, this.fluxoSelecionado);
     this.renderizar();
   },
 
@@ -170,16 +240,25 @@ const CapaApp = {
     inputNome.focus();
   },
 
-  salvarGrupo() {
+  async salvarGrupo() {
     const nome = document.getElementById('input-grupo-nome').value;
     const descricao = document.getElementById('input-grupo-descricao').value;
 
     if (this.editandoGrupoId) {
-      FlowStore.atualizarGrupo(this.editandoGrupoId, { nome, descricao });
+      if (!FlowStore.atualizarGrupo(this.editandoGrupoId, { nome, descricao })) {
+        await avisar(FlowStore.grupoComMesmoNome(nome, this.editandoGrupoId)
+          ? 'Já existe um grupo com esse nome.'
+          : 'Não foi possível salvar o grupo.');
+        return;
+      }
     } else {
       const id = FlowStore.cadastrarGrupo(nome, descricao);
+      if (id === false) {
+        await avisar('Já existe um grupo com esse nome.');
+        return;
+      }
       if (!id) {
-        alert('Informe o nome do grupo.');
+        await avisar('Informe o nome do grupo.');
         return;
       }
       this.grupoSelecionado = id;
@@ -191,7 +270,7 @@ const CapaApp = {
     this.renderizar();
   },
 
-  excluirGrupo() {
+  async excluirGrupo() {
     const id = this.editandoGrupoId;
     if (!id) return;
 
@@ -199,7 +278,7 @@ const CapaApp = {
     if (!grupo) return;
 
     if (GRUPOS.length <= 1) {
-      alert('Não é possível excluir o único grupo restante.');
+      await avisar('Não é possível excluir o único grupo restante.');
       return;
     }
 
@@ -210,10 +289,10 @@ const CapaApp = {
     if (clientesNoGrupo) {
       msg += `\n\n${clientesNoGrupo} cliente(s) deixarão de estar associados a este grupo (os clientes não são excluídos).`;
     }
-    if (!confirm(msg)) return;
+    if (!(await this.confirmarCapa(msg))) return;
 
     if (!FlowStore.removerGrupo(id)) {
-      alert('Não foi possível excluir o grupo.');
+      await avisar('Não foi possível excluir o grupo.');
       return;
     }
 
@@ -230,16 +309,17 @@ const CapaApp = {
     document.getElementById('dialog-fluxo-grupo').textContent = grupo
       ? `Grupo: ${grupo.nome}`
       : '';
-    document.getElementById('input-fluxo-nome').value = 'Fluxo padrão';
-    document.getElementById('input-fluxo-descricao').value = grupo?.descricao || '';
+    document.getElementById('input-fluxo-nome').value = '';
+    document.getElementById('input-fluxo-nome').placeholder = 'Ex: Fluxo padrão';
+    document.getElementById('input-fluxo-descricao').value = '';
     this.dialogFluxo.showModal();
     document.getElementById('input-fluxo-nome').focus();
   },
 
-  salvarFluxoPadrao() {
+  async salvarFluxoPadrao() {
     const grupoId = this.selectGrupo?.value || this.grupoSelecionado || FlowStore.getGrupoAtivo();
     if (!grupoId) {
-      alert('Selecione um grupo.');
+      await avisar('Selecione um grupo.');
       return;
     }
     this.grupoSelecionado = grupoId;
@@ -247,7 +327,7 @@ const CapaApp = {
     const nome = document.getElementById('input-fluxo-nome').value.trim();
     const descricao = document.getElementById('input-fluxo-descricao').value.trim();
     if (!nome) {
-      alert('Informe o nome do fluxo.');
+      await avisar('Informe o nome do fluxo.');
       document.getElementById('input-fluxo-nome').focus();
       return;
     }
@@ -257,26 +337,29 @@ const CapaApp = {
       resultado = FlowStore.cadastrarFluxoPadrao(grupoId, nome, descricao);
     } catch (err) {
       console.error('Erro ao cadastrar fluxo:', err);
-      alert('Erro ao cadastrar o fluxo. Veja o console (F12) para detalhes.');
+      await avisar('Erro ao cadastrar o fluxo. Veja o console (F12) para detalhes.');
       return;
     }
     if (!resultado.ok) {
-      alert(resultado.erro || 'Não foi possível cadastrar o fluxo.');
+      await avisar(resultado.erro || 'Não foi possível cadastrar o fluxo.');
       return;
     }
 
     this.dialogFluxo.close();
-    FlowStore.carregarGrupo(grupoId);
+    const fluxoId = resultado.fluxoId || 'padrao';
+    this.fluxoSelecionado = fluxoId;
+    FlowStore.carregarGrupo(grupoId, fluxoId);
     this.renderizar();
 
-    if (confirm('Fluxo padrão cadastrado. Abrir o diagrama para montar as etapas?')) {
-      location.href = this.urlFluxo('padrao', grupoId);
+    if (await this.confirmarCapa(`Fluxo "${nome}" cadastrado. Deseja abrir o diagrama agora?`)) {
+      location.href = this.urlFluxo('padrao', grupoId, fluxoId);
     }
   },
 
-  urlFluxo(clienteId, grupoId = this.grupoSelecionado) {
+  urlFluxo(clienteId, grupoId = this.grupoSelecionado, fluxoId = this.fluxoSelecionado) {
     const params = new URLSearchParams();
     if (grupoId) params.set('grupo', grupoId);
+    if (fluxoId) params.set('fluxo', fluxoId);
     if (clienteId && clienteId !== 'padrao') params.set('cliente', clienteId);
     const qs = params.toString();
     return qs ? `fluxo.html?${qs}` : 'fluxo.html';
@@ -330,7 +413,7 @@ const CapaApp = {
     }
   },
 
-  lerGruposDoFormulario() {
+  async lerGruposDoFormulario() {
     const modo = document.querySelector('input[name="cliente-grupos-modo"]:checked')?.value;
     if (modo === 'todos') return 'todos';
     const ids = [...this.checkboxesGrupos.querySelectorAll('input[name="cliente-grupo"]:checked')]
@@ -339,7 +422,7 @@ const CapaApp = {
       return [this.grupoSelecionado];
     }
     if (!ids.length) {
-      alert('Selecione ao menos um grupo ou marque "Todos os grupos".');
+      await avisar('Selecione ao menos um grupo ou marque "Todos os grupos".');
       return null;
     }
     return ids;
@@ -365,44 +448,62 @@ const CapaApp = {
       return;
     }
 
-    const temFluxo = FlowStore.grupoTemFluxo(this.grupoSelecionado);
-    this.btnCadastrarFluxo.hidden = temFluxo;
+    const fluxos = FlowStore.listarFluxos(this.grupoSelecionado);
+    this.btnCadastrarFluxo.hidden = false;
+    this.btnCadastrarFluxo.textContent = fluxos.length
+      ? '+ Cadastrar outro fluxo'
+      : '+ Cadastrar fluxo';
 
-    if (!temFluxo) {
+    if (!fluxos.length) {
       this.listaFluxos.innerHTML = `
-        <p class="capa-vazio">Este grupo ainda não tem fluxo padrão. Cadastre um para começar a montar o processo.</p>
+        <p class="capa-vazio">Este grupo ainda não tem fluxos. Cadastre o primeiro processo (ex.: Criar pedido, Conferir…).</p>
       `;
       return;
     }
 
-    const fluxos = FlowStore.listarFluxos(this.grupoSelecionado);
+    if (!this.fluxoSelecionado || !fluxos.some((f) => f.id === this.fluxoSelecionado)) {
+      this.fluxoSelecionado = fluxos[0].id;
+    }
+
     const grupo = GRUPOS.find((g) => g.id === this.grupoSelecionado);
 
-    this.listaFluxos.innerHTML = fluxos.map((f) => `
-      <article class="capa-card capa-card--fluxo" data-fluxo="${f.id}">
+    this.listaFluxos.innerHTML = fluxos.map((f) => {
+      const qtdClientes = FlowStore.listarClientesDoFluxo(this.grupoSelecionado, f.id).length;
+      const ativo = f.id === this.fluxoSelecionado ? ' capa-card--ativo' : '';
+      return `
+      <article class="capa-card capa-card--fluxo${ativo}" data-fluxo="${f.id}">
         <div class="capa-card__cor capa-card__cor--padrao" aria-hidden="true"></div>
         <div class="capa-card__corpo">
           <h3 class="capa-card__titulo">${f.nome}</h3>
           <p class="capa-card__descricao">${f.descricao || 'Sem descrição.'}</p>
-          <p class="capa-card__meta">${f.etapas} etapa(s) · grupo ${grupo?.nome || ''}</p>
+          <p class="capa-card__meta">${f.etapas} etapa(s) · ${qtdClientes} cliente(s) · grupo ${grupo?.nome || ''}</p>
           <div class="capa-card__acoes">
-            <a href="${this.urlFluxo('padrao')}" class="btn-acao btn-acao--primario">Abrir diagrama</a>
+            <a href="${this.urlFluxo('padrao', this.grupoSelecionado, f.id)}" class="btn-acao btn-acao--primario">Abrir diagrama</a>
+            <button type="button" class="btn-acao" data-ver-clientes-fluxo="${f.id}">Ver clientes</button>
             <button type="button" class="btn-acao" data-editar-fluxo="${f.id}">Editar</button>
           </div>
         </div>
-      </article>
-    `).join('');
+      </article>`;
+    }).join('');
 
     this.listaFluxos.querySelectorAll('[data-editar-fluxo]').forEach((btn) => {
       btn.addEventListener('click', () => this.editarFluxo(btn.dataset.editarFluxo));
     });
+    this.listaFluxos.querySelectorAll('[data-ver-clientes-fluxo]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.fluxoSelecionado = btn.dataset.verClientesFluxo;
+        if (this.selectFluxoClientes) this.selectFluxoClientes.value = this.fluxoSelecionado;
+        this.renderizarClientes();
+        document.getElementById('secao-clientes-fluxo')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
   },
 
   editarFluxo(id) {
-    if (id !== 'padrao') return;
-    const fluxo = FlowStore.listarFluxos(this.grupoSelecionado)[0];
+    const fluxo = FlowStore.listarFluxos(this.grupoSelecionado).find((f) => f.id === id);
     if (!fluxo) return;
 
+    this.editandoFluxoId = id;
     const grupo = GRUPOS.find((g) => g.id === this.grupoSelecionado);
     document.getElementById('dialog-editar-fluxo-grupo').textContent = grupo
       ? `Grupo: ${grupo.nome}`
@@ -413,23 +514,47 @@ const CapaApp = {
     document.getElementById('input-editar-fluxo-nome').focus();
   },
 
-  salvarEdicaoFluxo() {
+  async salvarEdicaoFluxo() {
     const nome = document.getElementById('input-editar-fluxo-nome').value;
     const descricao = document.getElementById('input-editar-fluxo-descricao').value;
-    FlowStore.atualizarFluxoPadrao(nome, descricao, this.grupoSelecionado);
-    FlowStore.carregarGrupo(this.grupoSelecionado);
+    const fluxoId = this.editandoFluxoId || 'padrao';
+    const ok = FlowStore.atualizarFluxo(fluxoId, nome, descricao, this.grupoSelecionado);
+    if (!ok) {
+      const msg = FlowStore.fluxoComMesmoNome(this.grupoSelecionado, nome, fluxoId)
+        ? 'Já existe um fluxo com esse nome neste grupo.'
+        : 'Não foi possível salvar o fluxo.';
+      await avisar(msg);
+      return;
+    }
+    FlowStore.carregarGrupo(this.grupoSelecionado, fluxoId);
+    this.editandoFluxoId = null;
     this.dialogEditarFluxo.close();
     this.renderizar();
   },
 
-  excluirFluxoPadrao() {
-    const fluxo = FlowStore.listarFluxos(this.grupoSelecionado)[0];
+  async excluirFluxoPadrao() {
+    const fluxoId = this.editandoFluxoId || 'padrao';
+    const fluxo = FlowStore.listarFluxos(this.grupoSelecionado).find((f) => f.id === fluxoId);
     const grupo = GRUPOS.find((g) => g.id === this.grupoSelecionado);
-    const msg = `Excluir o fluxo "${fluxo?.nome || 'padrão'}" do grupo ${grupo?.nome || ''}?\n\nAs etapas deste fluxo serão removidas. Os clientes do grupo permanecem, mas não poderão abrir o diagrama até cadastrar um novo fluxo.`;
+    const qtdClientes = FlowStore.listarClientesDoFluxo(this.grupoSelecionado, fluxoId).length;
+    const nomeFluxo = fluxo?.nome || fluxoId;
+    const nomeGrupo = grupo?.nome || '';
+    let msg = `Excluir o fluxo "${nomeFluxo}" do grupo ${nomeGrupo}?`;
+    if (qtdClientes) {
+      msg += `\n\n${qtdClientes} cliente(s) deste fluxo também serão excluídos permanentemente.`;
+    } else {
+      msg += '\n\nNão há clientes neste fluxo.';
+    }
 
-    if (!confirm(msg)) return;
+    if (!(await this.confirmarCapa(msg))) return;
 
-    FlowStore.removerFluxoPadrao(this.grupoSelecionado);
+    if (!FlowStore.removerFluxo(this.grupoSelecionado, fluxoId)) {
+      await avisar('Não é possível excluir o único fluxo do grupo.');
+      return;
+    }
+
+    this.editandoFluxoId = null;
+    this.fluxoSelecionado = FlowStore.listarFluxos(this.grupoSelecionado)[0]?.id || null;
     this.dialogEditarFluxo.close();
     this.renderizar();
   },
@@ -441,8 +566,40 @@ const CapaApp = {
       return;
     }
 
-    const clientes = FlowStore.listarClientesDoGrupo(grupoId);
-    const temFluxo = FlowStore.grupoTemFluxo(grupoId);
+    const fluxos = FlowStore.listarFluxos(grupoId);
+    if (!fluxos.length) {
+      if (this.selectFluxoClientes) {
+        this.selectFluxoClientes.innerHTML = '';
+        this.selectFluxoClientes.disabled = true;
+      }
+      this.listaClientes.innerHTML = '<p class="capa-vazio">Cadastre um fluxo neste grupo antes de associar clientes.</p>';
+      return;
+    }
+
+    if (!this.fluxoSelecionado || !fluxos.some((f) => f.id === this.fluxoSelecionado)) {
+      this.fluxoSelecionado = fluxos[0].id;
+    }
+
+    if (this.selectFluxoClientes) {
+      this.selectFluxoClientes.disabled = false;
+      this.selectFluxoClientes.innerHTML = fluxos.map((f) => `
+        <option value="${f.id}" ${f.id === this.fluxoSelecionado ? 'selected' : ''}>${f.nome}</option>
+      `).join('');
+    }
+
+    if (this.selectFluxoNovoCliente) {
+      this.selectFluxoNovoCliente.innerHTML = fluxos.map((f) => `
+        <option value="${f.id}" ${f.id === this.fluxoSelecionado ? 'selected' : ''}>${f.nome}</option>
+      `).join('');
+    }
+
+    const fluxoAtual = fluxos.find((f) => f.id === this.fluxoSelecionado);
+    const tituloSecao = document.getElementById('titulo-clientes-fluxo');
+    if (tituloSecao) {
+      tituloSecao.textContent = `Clientes do fluxo: ${fluxoAtual?.nome || ''}`;
+    }
+
+    const clientes = FlowStore.listarClientesDoFluxo(grupoId, this.fluxoSelecionado);
 
     try {
       this.listaClientes.innerHTML = clientes.length
@@ -452,9 +609,6 @@ const CapaApp = {
           const custom = FlowStore.getCustom(c.id);
           const resumo = FlowStore.resumoCliente(c.id);
           const rotuloGrupos = FlowStore.rotuloGruposCliente(c.id);
-          const abrirFluxo = temFluxo
-            ? `<a href="${this.urlFluxo(c.id)}" class="btn-acao btn-acao--primario">Abrir fluxo</a>`
-            : '<button type="button" class="btn-acao btn-acao--primario" disabled title="Cadastre o fluxo padrão do grupo">Abrir fluxo</button>';
           return `
         <article class="capa-card capa-card--cliente" data-cliente="${c.id}">
           <div class="capa-card__cor" style="background:${corHex}" aria-hidden="true"></div>
@@ -466,14 +620,14 @@ const CapaApp = {
             </p>
             <p class="capa-card__grupos">${rotuloGrupos}</p>
             <div class="capa-card__acoes">
-              ${abrirFluxo}
+              <a href="${this.urlFluxo(c.id, grupoId, this.fluxoSelecionado)}" class="btn-acao btn-acao--primario">Abrir fluxo</a>
               <button type="button" class="btn-acao" data-editar-cliente="${c.id}">Editar</button>
               <button type="button" class="btn-acao btn-acao--danger-outline" data-remover-cliente="${c.id}">Excluir</button>
             </div>
           </div>
         </article>`;
         }).join('')
-        : '<p class="capa-vazio">Nenhum cliente neste grupo. Cadastre abaixo ou associe um cliente existente a este grupo.</p>';
+        : `<p class="capa-vazio">Nenhum cliente no fluxo "${fluxoAtual?.nome || ''}". Cadastre abaixo.</p>`;
     } catch (err) {
       console.error('Erro ao renderizar clientes na capa:', err);
       this.listaClientes.innerHTML = '<p class="capa-vazio">Erro ao listar clientes. Recarregue a página.</p>';
@@ -488,7 +642,7 @@ const CapaApp = {
     });
   },
 
-  cadastrarCliente() {
+  async cadastrarCliente() {
     if (this._cadastrandoCliente) return;
     this._cadastrandoCliente = true;
 
@@ -496,7 +650,7 @@ const CapaApp = {
     const nome = document.getElementById('input-cliente-nome').value;
     const descricao = document.getElementById('input-cliente-descricao').value;
     const cor = document.getElementById('input-cliente-cor').value;
-    let grupos = this.lerGruposDoFormulario();
+    let grupos = await this.lerGruposDoFormulario();
     if (grupos == null) {
       this._cadastrandoCliente = false;
       return;
@@ -506,21 +660,24 @@ const CapaApp = {
       grupos = [...grupos, grupoAtual];
     }
 
-    let id;
+    let resultado;
+    const fluxoNovo = this.selectFluxoNovoCliente?.value || this.fluxoSelecionado || 'padrao';
     try {
-      id = FlowStore.cadastrarCliente(nome, descricao, cor, grupos);
+      resultado = FlowStore.cadastrarCliente(nome, descricao, cor, grupos, fluxoNovo);
     } catch (err) {
       console.error(err);
-      alert('Não foi possível salvar o cliente. Verifique se há espaço no navegador e tente de novo.');
+      await avisar('Não foi possível salvar o cliente. Verifique se há espaço no navegador e tente de novo.');
       this._cadastrandoCliente = false;
       return;
     }
 
-    if (!id) {
-      alert('Informe o nome do cliente.');
+    if (!resultado?.ok) {
+      await avisar(resultado?.erro || 'Não foi possível cadastrar o cliente.');
       this._cadastrandoCliente = false;
       return;
     }
+
+    const id = resultado.id;
 
     // Atualiza a lista antes de resetar o formulário (evita falha silenciosa no pós-cadastro).
     this.renderizar();
@@ -531,12 +688,15 @@ const CapaApp = {
     this._cadastrandoCliente = false;
 
     const nomeExibicao = nome.trim().toUpperCase();
-    if (confirm(`Cliente "${nomeExibicao}" cadastrado. Abrir o fluxo agora?`)) {
+    const abrir = await this.confirmarCapa(
+      `Cliente "${nomeExibicao}" cadastrado. Deseja abrir o fluxo agora?`,
+    );
+    if (abrir) {
       if (!FlowStore.grupoTemFluxo(this.grupoSelecionado)) {
-        alert('Cadastre o fluxo padrão deste grupo antes de abrir o diagrama.');
+        await avisar('Cadastre o fluxo padrão deste grupo antes de abrir o diagrama.');
         return;
       }
-      location.href = this.urlFluxo(id);
+      location.href = this.urlFluxo(id, this.grupoSelecionado, fluxoNovo);
     }
   },
 
@@ -551,6 +711,9 @@ const CapaApp = {
     document.getElementById('input-cliente-descricao').value = custom?.descricao || '';
     document.getElementById('input-cliente-cor').value = cores.cor;
     this.aplicarGruposNoFormulario(cliente.grupos);
+    if (this.selectFluxoNovoCliente && this.grupoSelecionado) {
+      this.selectFluxoNovoCliente.value = FlowStore.getFluxoDoCliente(id, this.grupoSelecionado);
+    }
 
     const titulo = this.formCliente.closest('.capa-form-box').querySelector('h3');
     titulo.textContent = `Editar cliente — ${cliente.nome}`;
@@ -570,15 +733,27 @@ const CapaApp = {
     this.formCliente.closest('.capa-form-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
 
-  salvarEdicaoCliente() {
+  async salvarEdicaoCliente() {
     const id = this.editandoClienteId;
     const nome = document.getElementById('input-cliente-nome').value;
     const descricao = document.getElementById('input-cliente-descricao').value;
     const cor = document.getElementById('input-cliente-cor').value;
-    const grupos = this.lerGruposDoFormulario();
+    const grupos = await this.lerGruposDoFormulario();
     if (grupos == null) return;
 
-    FlowStore.atualizarCliente(id, { nome, descricao, cor, grupos });
+    const resultado = FlowStore.atualizarCliente(id, {
+      nome,
+      descricao,
+      cor,
+      grupos,
+      fluxoPorGrupo: this.grupoSelecionado
+        ? { [this.grupoSelecionado]: this.selectFluxoNovoCliente?.value || this.fluxoSelecionado }
+        : undefined,
+    });
+    if (!resultado?.ok) {
+      await avisar(resultado?.erro || 'Não foi possível salvar o cliente.');
+      return;
+    }
     this.cancelarEdicaoCliente();
     this.renderizar();
   },
@@ -598,10 +773,13 @@ const CapaApp = {
     document.getElementById('btn-cancelar-edicao-cliente')?.remove();
   },
 
-  removerCliente(id) {
+  async removerCliente(id) {
     const cliente = CLIENTES.find((c) => c.id === id);
     if (!cliente) return;
-    if (!confirm(`Excluir o cliente "${cliente.nome}" e todas as customizações?`)) return;
+    const confirmou = await this.confirmarCapa(
+      `Excluir o cliente "${cliente.nome}" e todas as customizações?`,
+    );
+    if (!confirmou) return;
     if (this.editandoClienteId === id) this.cancelarEdicaoCliente();
     FlowStore.removerCliente(id);
     this.renderizar();

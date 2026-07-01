@@ -19,6 +19,7 @@ const FlowStore = {
   FLOW_CONFIG_API: '/api/flow-config',
   SUBFLUXO_SEM_RETORNO: '__sem_retorno__',
   grupoAtivo: null,
+  fluxoAtivo: null,
   diagramLayouts: {},
 
   PREFIXO_FIXO: ['criar-pedido', 'tentar-sugerir'],
@@ -58,6 +59,7 @@ const FlowStore = {
       creditFork: this.CREDIT_FORK,
       diagramLayouts: this.diagramLayouts,
       grupoAtivo: this.grupoAtivo,
+      fluxoAtivo: this.fluxoAtivo,
     };
   },
 
@@ -113,6 +115,13 @@ const FlowStore = {
     if (dados.grupoAtivo) {
       this.grupoAtivo = dados.grupoAtivo;
     }
+    if (dados.fluxoAtivo) {
+      this.fluxoAtivo = dados.fluxoAtivo;
+    }
+
+    this.migrarMultiplosFluxosPorGrupo();
+    this.migrarLayoutsMultiplosFluxos();
+    this.migrarClientesFluxosPorGrupo();
 
     Object.values(CLIENT_CUSTOMIZATIONS).forEach((c) => {
       this.migrarSequenciaCongelada(c);
@@ -209,7 +218,113 @@ const FlowStore = {
   },
 
   layoutKey(clienteId) {
-    return `${this.getGrupoAtivo()}:${clienteId}`;
+    return `${this.getGrupoAtivo()}:${this.getFluxoAtivoId()}:${clienteId}`;
+  },
+
+  getFluxoAtivoId() {
+    return this.fluxoAtivo || 'padrao';
+  },
+
+  migrarMultiplosFluxosPorGrupo() {
+    let alterou = false;
+    Object.keys({ ...GRUPO_FLUXOS }).forEach((gid) => {
+      const gf = GRUPO_FLUXOS[gid];
+      if (!gf || gf.fluxos) return;
+      if (gf.cadastrado) {
+        const { cadastrado: _c, ...rest } = gf;
+        GRUPO_FLUXOS[gid] = {
+          fluxos: {
+            padrao: { ...rest, id: 'padrao', cadastrado: true },
+          },
+        };
+      } else {
+        GRUPO_FLUXOS[gid] = { fluxos: {} };
+      }
+      alterou = true;
+    });
+    return alterou;
+  },
+
+  migrarLayoutsMultiplosFluxos() {
+    const next = {};
+    let alterou = false;
+    Object.entries(this.diagramLayouts).forEach(([key, val]) => {
+      const parts = key.split(':');
+      if (parts.length === 2) {
+        next[`${parts[0]}:padrao:${parts[1]}`] = val;
+        alterou = true;
+      } else {
+        next[key] = val;
+      }
+    });
+    if (alterou) this.diagramLayouts = next;
+    return alterou;
+  },
+
+  migrarClientesFluxosPorGrupo() {
+    let alterou = false;
+    CLIENTES.forEach((c) => {
+      if (c.id === 'padrao') return;
+      const grupos = c.grupos === 'todos'
+        ? GRUPOS.map((g) => g.id)
+        : (Array.isArray(c.grupos) ? c.grupos : []);
+      grupos.forEach((gid) => {
+        if (!c.fluxosPorGrupo) c.fluxosPorGrupo = {};
+        if (!c.fluxosPorGrupo[gid]) {
+          c.fluxosPorGrupo[gid] = 'padrao';
+          alterou = true;
+        }
+      });
+    });
+    return alterou;
+  },
+
+  ensureContainerGrupo(grupoId) {
+    if (!grupoId) return null;
+    this.migrarMultiplosFluxosPorGrupo();
+    if (!GRUPO_FLUXOS[grupoId]) {
+      GRUPO_FLUXOS[grupoId] = { fluxos: {} };
+    }
+    const container = GRUPO_FLUXOS[grupoId];
+    if (!container.fluxos) {
+      if (container.cadastrado) {
+        const { cadastrado: _c, ...rest } = container;
+        GRUPO_FLUXOS[grupoId] = {
+          fluxos: {
+            padrao: { ...rest, id: 'padrao', cadastrado: true },
+          },
+        };
+      } else {
+        container.fluxos = {};
+      }
+    }
+    return GRUPO_FLUXOS[grupoId];
+  },
+
+  getFluxoDef(grupoId, fluxoId = null) {
+    const gid = grupoId || this.grupoAtivo;
+    if (!gid) return null;
+    const container = this.ensureContainerGrupo(gid);
+    const fid = fluxoId
+      || (gid === this.grupoAtivo ? this.getFluxoAtivoId() : null)
+      || this.listarFluxos(gid)[0]?.id
+      || 'padrao';
+    return container.fluxos[fid] || null;
+  },
+
+  slugFluxo(grupoId, nome) {
+    let slug = nome.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (!slug) slug = 'fluxo';
+    const container = this.ensureContainerGrupo(grupoId);
+    let candidato = slug;
+    let n = 2;
+    while (container.fluxos[candidato]?.cadastrado) {
+      candidato = `${slug}-${n}`;
+      n += 1;
+    }
+    return candidato;
   },
 
   ensureDiagramLayout(clienteId) {
@@ -462,14 +577,11 @@ const FlowStore = {
   },
 
   getFluxoGrupo(grupoId) {
-    const id = grupoId || this.getGrupoAtivo();
-    return GRUPO_FLUXOS[id] || null;
+    return this.getFluxoDef(grupoId);
   },
 
   grupoTemFluxo(grupoId) {
-    const id = grupoId || this.getGrupoAtivo();
-    const gf = GRUPO_FLUXOS[id];
-    return !!(gf && gf.cadastrado);
+    return this.listarFluxos(grupoId || this.getGrupoAtivo()).length > 0;
   },
 
   criarFluxoGrupoNovo(nomeGrupo, nomeFluxo = 'Fluxo padrão', descricaoFluxo = '') {
@@ -524,8 +636,14 @@ const FlowStore = {
     );
     if (!globalTem) return false;
 
-    const cadastrados = Object.entries(GRUPO_FLUXOS).filter(([, gf]) => gf?.cadastrado);
-    const vazios = cadastrados.filter(([, gf]) => {
+    const cadastrados = [];
+    Object.entries(GRUPO_FLUXOS).forEach(([gid, container]) => {
+      this.ensureContainerGrupo(gid);
+      Object.values(container.fluxos || {}).forEach((gf) => {
+        if (gf?.cadastrado) cadastrados.push(gf);
+      });
+    });
+    const vazios = cadastrados.filter((gf) => {
       this.ensureRegrasGrupo(gf);
       return !gf.regras.subfluxos.length
         && !gf.regras.ligacoes.length
@@ -533,7 +651,7 @@ const FlowStore = {
     });
 
     if (vazios.length === 1) {
-      vazios[0][1].regras = this.clonarRegras(global);
+      vazios[0].regras = this.clonarRegras(global);
       return true;
     }
     return false;
@@ -564,44 +682,52 @@ const FlowStore = {
     this.persistir();
   },
 
-  cadastrarFluxoPadrao(grupoId, nome, descricao = '') {
+  cadastrarFluxo(grupoId, nome, descricao = '') {
     const id = grupoId || this.getGrupoAtivo();
     if (!id || !GRUPOS.some((g) => g.id === id)) {
       return { ok: false, erro: 'Grupo inválido.' };
-    }
-    if (GRUPO_FLUXOS[id]?.cadastrado) {
-      return { ok: false, erro: 'Este grupo já possui fluxo padrão.' };
     }
 
     const label = (nome || '').trim();
     if (!label) {
       return { ok: false, erro: 'Informe o nome do fluxo.' };
     }
+    if (this.fluxoComMesmoNome(id, label)) {
+      return { ok: false, erro: 'Já existe um fluxo com esse nome neste grupo.' };
+    }
+
+    const container = this.ensureContainerGrupo(id);
+    const jaTem = Object.values(container.fluxos).some((f) => f?.cadastrado);
+    const fluxoId = jaTem ? this.slugFluxo(id, label) : 'padrao';
 
     const grupo = GRUPOS.find((g) => g.id === id);
     const fluxo = {
+      id: fluxoId,
       ...this.criarFluxoGrupoNovo(grupo?.nome, label, descricao),
       cadastrado: true,
+      estrutura: 'livre',
     };
-    GRUPO_FLUXOS[id] = fluxo;
 
-    this.grupoAtivo = id;
-    BASE_FLOW.nome = fluxo.nome;
-    BASE_FLOW.descricao = fluxo.descricao;
-    BASE_FLOW.sequenciaPosCredito = [...fluxo.sequenciaPosCredito];
-
+    container.fluxos[fluxoId] = fluxo;
+    this.carregarFluxo(id, fluxoId);
     this.persistir();
-    return { ok: true };
+    return { ok: true, fluxoId };
   },
 
-  carregarGrupo(grupoId) {
+  cadastrarFluxoPadrao(grupoId, nome, descricao = '') {
+    return this.cadastrarFluxo(grupoId, nome, descricao);
+  },
+
+  carregarFluxo(grupoId, fluxoId) {
     if (!grupoId || !GRUPOS.some((g) => g.id === grupoId)) {
       grupoId = GRUPOS[0]?.id || null;
     }
-    if (this.grupoAtivo && this.grupoAtivo !== grupoId) {
-      this.salvarGrupoAtivo();
+    const fid = fluxoId || this.listarFluxos(grupoId)[0]?.id || 'padrao';
+    if (this.grupoAtivo && (this.grupoAtivo !== grupoId || this.fluxoAtivo !== fid)) {
+      this.salvarFluxoAtivo();
     }
     this.grupoAtivo = grupoId;
+    this.fluxoAtivo = fid;
     if (!grupoId) {
       BASE_FLOW.nome = 'Fluxo padrão';
       BASE_FLOW.descricao = '';
@@ -609,7 +735,7 @@ const FlowStore = {
       BASE_FLOW.regras = this.regrasVazias();
       return;
     }
-    const gf = this.getFluxoGrupo(grupoId);
+    const gf = this.getFluxoDef(grupoId, fid);
     if (gf?.cadastrado) {
       BASE_FLOW.nome = gf.nome;
       BASE_FLOW.descricao = gf.descricao;
@@ -627,9 +753,15 @@ const FlowStore = {
     }
   },
 
-  salvarGrupoAtivo() {
-    if (!this.grupoAtivo) return;
-    const gf = this.getFluxoGrupo(this.grupoAtivo);
+  carregarGrupo(grupoId, fluxoId) {
+    const fluxos = grupoId ? this.listarFluxos(grupoId) : [];
+    const fid = fluxoId || fluxos[0]?.id || 'padrao';
+    this.carregarFluxo(grupoId, fid);
+  },
+
+  salvarFluxoAtivo() {
+    if (!this.grupoAtivo || !this.fluxoAtivo) return;
+    const gf = this.getFluxoDef(this.grupoAtivo, this.fluxoAtivo);
     if (!gf?.cadastrado) return;
     gf.nome = BASE_FLOW.nome;
     gf.descricao = BASE_FLOW.descricao;
@@ -640,6 +772,10 @@ const FlowStore = {
     }
   },
 
+  salvarGrupoAtivo() {
+    this.salvarFluxoAtivo();
+  },
+
   garantirGrupos() {
     /* Estado inicial sem grupos demo — cadastro na capa. */
   },
@@ -647,22 +783,39 @@ const FlowStore = {
   migrarEstruturaGrupos() {
     let alterou = false;
     GRUPOS.forEach((g) => {
-      const gf = GRUPO_FLUXOS[g.id];
-      if (!gf?.cadastrado) return;
-      if (g.id === 'faturamento') {
-        if (gf.estrutura !== 'faturamento') {
-          gf.estrutura = 'faturamento';
+      const container = this.ensureContainerGrupo(g.id);
+      Object.values(container.fluxos || {}).forEach((gf) => {
+        if (!gf?.cadastrado) return;
+
+        const seq = gf.sequenciaPosCredito || [];
+        const regras = gf.regras || {};
+        const semRegras = !regras.subfluxos?.length
+          && !regras.ligacoes?.length
+          && !regras.decisoes?.length;
+        const faturamentoAutomatico = gf.estrutura === 'faturamento'
+          && seq.length === 0
+          && semRegras;
+
+        if (faturamentoAutomatico) {
+          gf.estrutura = 'livre';
+          delete gf.creditFork;
+          alterou = true;
+          return;
+        }
+
+        if (!gf.estrutura) {
+          gf.estrutura = 'livre';
           alterou = true;
         }
-        if (!gf.creditFork) {
+        if (gf.estrutura === 'livre' && gf.creditFork) {
+          delete gf.creditFork;
+          alterou = true;
+        }
+        if (gf.estrutura === 'faturamento' && !gf.creditFork) {
           gf.creditFork = { ...this.CREDIT_FORK };
           alterou = true;
         }
-      } else if (!gf.estrutura || gf.estrutura === 'faturamento') {
-        gf.estrutura = 'livre';
-        delete gf.creditFork;
-        alterou = true;
-      }
+      });
     });
     if (alterou) {
       try {
@@ -689,18 +842,29 @@ const FlowStore = {
     });
   },
 
-  /** Remove clientes duplicados (mesmo id) e garante tema/cores. */
+  /** Remove clientes duplicados (mesmo id ou mesmo nome) e garante tema/cores. */
   sanitizarClientes() {
-    const vistos = new Set();
+    const idsVistos = new Set();
+    const nomesVistos = new Set();
     const limpos = [];
     let alterou = false;
 
     CLIENTES.forEach((c) => {
-      if (!c?.id || vistos.has(c.id)) {
+      if (!c?.id || idsVistos.has(c.id)) {
         alterou = true;
+        if (c?.id) delete CLIENT_CUSTOMIZATIONS[c.id];
         return;
       }
-      vistos.add(c.id);
+      if (c.id !== 'padrao') {
+        const nomeNorm = this.normalizarNomeCliente(c.nome);
+        if (nomeNorm && nomesVistos.has(nomeNorm)) {
+          alterou = true;
+          delete CLIENT_CUSTOMIZATIONS[c.id];
+          return;
+        }
+        if (nomeNorm) nomesVistos.add(nomeNorm);
+      }
+      idsVistos.add(c.id);
       limpos.push(c);
     });
 
@@ -739,29 +903,25 @@ const FlowStore = {
   /** Remove fluxos que foram criados automaticamente ao cadastrar o grupo. */
   migrarGruposComFluxoPadraoCopiado() {
     let alterou = false;
-
-    if (GRUPO_FLUXOS.faturamento && !GRUPO_FLUXOS.faturamento.cadastrado) {
-      GRUPO_FLUXOS.faturamento.cadastrado = true;
-      alterou = true;
-    }
+    this.migrarMultiplosFluxosPorGrupo();
 
     GRUPOS.forEach((g) => {
       if (g.id === 'faturamento') return;
-      const gf = GRUPO_FLUXOS[g.id];
-      if (!gf) return;
-      if (gf.cadastrado) return;
+      const container = this.ensureContainerGrupo(g.id);
+      Object.entries(container.fluxos).forEach(([fluxoId, gf]) => {
+        if (!gf || gf.cadastrado) return;
+        const seq = gf.sequenciaPosCredito || [];
+        const template = SEQUENCIA_PADRAO_POS_CREDITO;
+        const copiaDoTemplate = seq.length === template.length
+          && seq.every((id, i) => id === template[i]);
 
-      const seq = gf.sequenciaPosCredito || [];
-      const template = SEQUENCIA_PADRAO_POS_CREDITO;
-      const copiaDoTemplate = seq.length === template.length
-        && seq.every((id, i) => id === template[i]);
-
-      if (seq.length === 0 || copiaDoTemplate) {
-        delete GRUPO_FLUXOS[g.id];
-      } else {
-        gf.cadastrado = true;
-      }
-      alterou = true;
+        if (seq.length === 0 || copiaDoTemplate) {
+          delete container.fluxos[fluxoId];
+        } else {
+          gf.cadastrado = true;
+        }
+        alterou = true;
+      });
     });
     if (alterou) {
       try {
@@ -817,9 +977,20 @@ const FlowStore = {
     return candidato;
   },
 
+  normalizarNomeGrupo(nome) {
+    return (nome || '').trim().toLocaleLowerCase('pt-BR');
+  },
+
+  grupoComMesmoNome(nome, excluirId = null) {
+    const alvo = this.normalizarNomeGrupo(nome);
+    if (!alvo) return false;
+    return GRUPOS.some((g) => g.id !== excluirId && this.normalizarNomeGrupo(g.nome) === alvo);
+  },
+
   cadastrarGrupo(nome, descricao = '') {
     const label = nome.trim();
     if (!label) return null;
+    if (this.grupoComMesmoNome(label)) return false;
 
     this.salvarGrupoAtivo();
 
@@ -832,7 +1003,11 @@ const FlowStore = {
   atualizarGrupo(id, { nome, descricao } = {}) {
     const g = GRUPOS.find((x) => x.id === id);
     if (!g) return false;
-    if (nome?.trim()) g.nome = nome.trim();
+    if (nome?.trim()) {
+      const label = nome.trim();
+      if (this.grupoComMesmoNome(label, id)) return false;
+      g.nome = label;
+    }
     if (descricao != null) g.descricao = descricao.trim();
     this.persistir();
     return true;
@@ -2001,9 +2176,26 @@ const FlowStore = {
   adicionarDecisao(clienteId, noId, sim, nao, apos = null) {
     const c = this.getRegrasFlow(clienteId);
     if (!c) return;
-    c.decisoes = c.decisoes.filter((d) => d.no !== noId);
-    c.decisoes.push({ no: noId, sim, nao, apos: apos || null });
-    this.garantirDecisoesNoFluxo(clienteId);
+    c.decisoes = (c.decisoes || []).filter((d) => d.no !== noId);
+    c.decisoes.push({
+      no: noId,
+      sim: sim || null,
+      nao: nao || null,
+      apos: apos || null,
+    });
+    if (clienteId !== 'padrao') this.garantirDecisoesNoFluxo(clienteId);
+  },
+
+  atualizarVinculosDecisao(clienteId, noId, { sim, nao } = {}) {
+    const c = this.getRegrasFlow(clienteId);
+    if (!c || !noId) return;
+    let d = (c.decisoes || []).find((x) => x.no === noId);
+    if (!d) {
+      d = { no: noId, sim: null, nao: null, apos: null };
+      c.decisoes = [...(c.decisoes || []), d];
+    }
+    if (sim !== undefined) d.sim = sim || null;
+    if (nao !== undefined) d.nao = nao || null;
   },
 
   moverEtapa(clienteId, indice, direcao) {
@@ -2060,7 +2252,13 @@ const FlowStore = {
     if (!regras) return;
 
     regras.ligacoes = (regras.ligacoes || []).filter((l) => l.de !== noId && l.para !== noId);
-    regras.decisoes = (regras.decisoes || []).filter((d) => d.no !== noId);
+    regras.decisoes = (regras.decisoes || [])
+      .filter((d) => d.no !== noId)
+      .map((d) => ({
+        ...d,
+        sim: d.sim === noId ? null : d.sim,
+        nao: d.nao === noId ? null : d.nao,
+      }));
     regras.subfluxos = (regras.subfluxos || [])
       .map((s) => ({
         ...s,
@@ -2171,17 +2369,28 @@ const FlowStore = {
     }).map((n) => ({ id: n.id, label: n.label, tipo: n.tipo }));
   },
 
+  forEachFluxoCadastrado(fn) {
+    Object.keys(GRUPO_FLUXOS).forEach((gid) => {
+      const container = this.ensureContainerGrupo(gid);
+      Object.values(container.fluxos).forEach((gf) => {
+        if (gf?.cadastrado) fn(gf, gid);
+      });
+    });
+  },
+
   /** Etapa exclusiva de cliente que não está em nenhum fluxo. */
   isNoEmUso(noId) {
     if (this.PREFIXO_FIXO.includes(noId)) {
-      return Object.values(GRUPO_FLUXOS).some((gf) => (
-        gf.cadastrado && gf.estrutura === 'faturamento'
-      ));
+      let emFaturamento = false;
+      this.forEachFluxoCadastrado((gf) => {
+        if (gf.estrutura === 'faturamento') emFaturamento = true;
+      });
+      if (emFaturamento) return true;
     }
 
     const idsFork = new Set();
-    Object.values(GRUPO_FLUXOS).forEach((gf) => {
-      if (!gf.cadastrado || gf.estrutura !== 'faturamento' || !gf.creditFork) return;
+    this.forEachFluxoCadastrado((gf) => {
+      if (gf.estrutura !== 'faturamento' || !gf.creditFork) return;
       Object.values(gf.creditFork).forEach((v) => { if (v) idsFork.add(v); });
     });
     if (idsFork.has(noId)) return true;
@@ -2199,13 +2408,14 @@ const FlowStore = {
       || (s.passos || []).includes(noId)
     ))) return true;
 
-    if (Object.entries(GRUPO_FLUXOS).some(([gid, gf]) => {
-      if (!gf?.cadastrado) return false;
-      const seq = gid === this.grupoAtivo
+    let emAlgumFluxo = false;
+    this.forEachFluxoCadastrado((gf, gid) => {
+      const seq = gid === this.grupoAtivo && gf.id === this.getFluxoAtivoId()
         ? BASE_FLOW.sequenciaPosCredito
         : gf.sequenciaPosCredito;
-      return seq?.includes(noId);
-    })) return true;
+      if (seq?.includes(noId)) emAlgumFluxo = true;
+    });
+    if (emAlgumFluxo) return true;
 
     return Object.values(CLIENT_CUSTOMIZATIONS).some((c) => {
       if (!c) return false;
@@ -2292,6 +2502,20 @@ const FlowStore = {
     }
   },
 
+  normalizarNomeCliente(nome) {
+    return (nome || '').trim().toUpperCase();
+  },
+
+  buscarClientePorNome(nome, excetoId = null) {
+    const alvo = this.normalizarNomeCliente(nome);
+    if (!alvo) return null;
+    return CLIENTES.find((c) => (
+      c.id !== 'padrao'
+      && c.id !== excetoId
+      && this.normalizarNomeCliente(c.nome) === alvo
+    )) || null;
+  },
+
   slugCliente(nome) {
     let slug = nome.toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -2312,23 +2536,46 @@ const FlowStore = {
 
   listarFluxos(grupoId) {
     const id = grupoId || this.getGrupoAtivo();
-    const gf = this.getFluxoGrupo(id);
-    if (!gf?.cadastrado) return [];
-    return [{
-      id: 'padrao',
-      grupoId: id,
-      nome: gf.nome,
-      descricao: gf.descricao,
-      etapas: gf.sequenciaPosCredito.length,
-    }];
+    if (!id) return [];
+    const container = this.ensureContainerGrupo(id);
+    return Object.entries(container.fluxos)
+      .filter(([, f]) => f?.cadastrado)
+      .map(([fluxoId, f]) => ({
+        id: fluxoId,
+        grupoId: id,
+        nome: f.nome,
+        descricao: f.descricao,
+        etapas: f.sequenciaPosCredito?.length || 0,
+      }));
   },
 
-  atualizarFluxoPadrao(nome, descricao, grupoId) {
-    const gf = this.getFluxoGrupo(grupoId || this.getGrupoAtivo());
+  normalizarNomeFluxo(nome) {
+    return this.normalizarNomeGrupo(nome);
+  },
+
+  fluxoComMesmoNome(grupoId, nome, excluirFluxoId = null) {
+    const alvo = this.normalizarNomeFluxo(nome);
+    if (!alvo || !grupoId) return false;
+    return this.listarFluxos(grupoId).some(
+      (f) => f.id !== excluirFluxoId && this.normalizarNomeFluxo(f.nome) === alvo,
+    );
+  },
+
+  atualizarFluxo(fluxoId, nome, descricao, grupoId) {
+    const gid = grupoId || this.getGrupoAtivo();
+    const gf = this.getFluxoDef(gid, fluxoId);
     if (!gf?.cadastrado) return false;
-    if (nome) gf.nome = nome.trim();
+    if (nome) {
+      const label = nome.trim();
+      if (!label) return false;
+      if (this.fluxoComMesmoNome(gid, label, fluxoId)) return false;
+      gf.nome = label;
+    }
     if (descricao != null) gf.descricao = descricao.trim();
-    if (this.getGrupoAtivo() === (grupoId || this.getGrupoAtivo())) {
+    if (
+      this.getGrupoAtivo() === (grupoId || this.getGrupoAtivo())
+      && this.getFluxoAtivoId() === fluxoId
+    ) {
       BASE_FLOW.nome = gf.nome;
       BASE_FLOW.descricao = gf.descricao;
     }
@@ -2336,18 +2583,77 @@ const FlowStore = {
     return true;
   },
 
-  removerFluxoPadrao(grupoId) {
-    const id = grupoId || this.getGrupoAtivo();
-    if (!GRUPO_FLUXOS[id]?.cadastrado) return false;
-    delete GRUPO_FLUXOS[id];
-    if (this.grupoAtivo === id) this.carregarGrupo(id);
+  atualizarFluxoPadrao(nome, descricao, grupoId) {
+    return this.atualizarFluxo('padrao', nome, descricao, grupoId);
+  },
+
+  removerFluxo(grupoId, fluxoId) {
+    const gid = grupoId || this.getGrupoAtivo();
+    const container = this.ensureContainerGrupo(gid);
+    if (!container?.fluxos[fluxoId]?.cadastrado) return false;
+
+    const restantes = Object.keys(container.fluxos).filter(
+      (k) => k !== fluxoId && container.fluxos[k]?.cadastrado,
+    );
+    if (!restantes.length) return false;
+
+    const clientesDoFluxo = this.listarClientesDoFluxo(gid, fluxoId);
+    clientesDoFluxo.forEach((c) => this.removerCliente(c.id));
+
+    delete container.fluxos[fluxoId];
+
+    const prefix = `${gid}:${fluxoId}:`;
+    Object.keys(this.diagramLayouts).forEach((key) => {
+      if (key.startsWith(prefix)) delete this.diagramLayouts[key];
+    });
+
+    if (this.grupoAtivo === gid && this.fluxoAtivo === fluxoId) {
+      this.carregarFluxo(gid, restantes[0]);
+    }
     this.persistir();
     return true;
   },
 
-  cadastrarCliente(nome, descricao = '', cor = '#2563eb', grupos = 'todos') {
+  removerFluxoPadrao(grupoId) {
+    return this.removerFluxo(grupoId, 'padrao');
+  },
+
+  getFluxoDoCliente(clienteId, grupoId) {
+    const c = CLIENTES.find((x) => x.id === clienteId);
+    if (!c) return 'padrao';
+    return c.fluxosPorGrupo?.[grupoId] || 'padrao';
+  },
+
+  setFluxoDoCliente(clienteId, grupoId, fluxoId) {
+    const c = CLIENTES.find((x) => x.id === clienteId);
+    if (!c || c.id === 'padrao') return;
+    if (!c.fluxosPorGrupo) c.fluxosPorGrupo = {};
+    c.fluxosPorGrupo[grupoId] = fluxoId;
+  },
+
+  clientePertenceFluxo(clienteId, grupoId, fluxoId) {
+    if (clienteId === 'padrao') return true;
+    if (!this.clientePertenceGrupo(clienteId, grupoId)) return false;
+    return this.getFluxoDoCliente(clienteId, grupoId) === fluxoId;
+  },
+
+  nomeFluxo(grupoId, fluxoId) {
+    return this.getFluxoDef(grupoId, fluxoId)?.nome || fluxoId;
+  },
+
+  cadastrarCliente(nome, descricao = '', cor = '#2563eb', grupos = 'todos', fluxoIdNoGrupo = null) {
     const label = nome.trim();
-    if (!label) return null;
+    if (!label) return { ok: false, erro: 'Informe o nome do cliente.' };
+
+    const nomeNorm = this.normalizarNomeCliente(label);
+    const duplicado = this.buscarClientePorNome(nomeNorm);
+    if (duplicado) {
+      return {
+        ok: false,
+        erro: `Já existe um cliente cadastrado com o nome "${duplicado.nome}".`,
+        clienteId: duplicado.id,
+      };
+    }
 
     const id = this.slugCliente(label);
     const tema = id;
@@ -2365,10 +2671,20 @@ const FlowStore = {
 
     CLIENTES.push({
       id,
-      nome: label.toUpperCase(),
+      nome: nomeNorm,
       temCustomizacao: true,
       tema,
       grupos: gruposNorm,
+      fluxosPorGrupo: {},
+    });
+
+    const novo = CLIENTES[CLIENTES.length - 1];
+    const gruposAlvo = gruposNorm === 'todos'
+      ? GRUPOS.map((g) => g.id)
+      : gruposNorm;
+    const fluxoPadrao = fluxoIdNoGrupo || this.getFluxoAtivoId() || 'padrao';
+    gruposAlvo.forEach((gid) => {
+      novo.fluxosPorGrupo[gid] = fluxoPadrao;
     });
 
     CLIENT_TEMAS[tema] = {
@@ -2377,7 +2693,7 @@ const FlowStore = {
     };
 
     CLIENT_CUSTOMIZATIONS[id] = {
-      nome: label.toUpperCase(),
+      nome: nomeNorm,
       descricao: descricao.trim(),
       tema,
       puladas: [],
@@ -2389,17 +2705,25 @@ const FlowStore = {
     };
 
     this.persistir();
-    return id;
+    return { ok: true, id };
   },
 
-  atualizarCliente(id, { nome, descricao, cor, grupos } = {}) {
-    if (id === 'padrao') return false;
+  atualizarCliente(id, { nome, descricao, cor, grupos, fluxoPorGrupo } = {}) {
+    if (id === 'padrao') return { ok: false, erro: 'Cliente inválido.' };
     const cliente = CLIENTES.find((c) => c.id === id);
     const custom = CLIENT_CUSTOMIZATIONS[id];
-    if (!cliente || !custom) return false;
+    if (!cliente || !custom) return { ok: false, erro: 'Cliente não encontrado.' };
 
     if (nome?.trim()) {
-      cliente.nome = nome.trim().toUpperCase();
+      const nomeNorm = this.normalizarNomeCliente(nome);
+      const duplicado = this.buscarClientePorNome(nomeNorm, id);
+      if (duplicado) {
+        return {
+          ok: false,
+          erro: `Já existe um cliente cadastrado com o nome "${duplicado.nome}".`,
+        };
+      }
+      cliente.nome = nomeNorm;
       custom.nome = cliente.nome;
     }
     if (descricao != null) custom.descricao = descricao.trim();
@@ -2412,10 +2736,25 @@ const FlowStore = {
     }
     if (grupos != null) {
       cliente.grupos = grupos === 'todos' ? 'todos' : [...grupos];
+      if (!cliente.fluxosPorGrupo) cliente.fluxosPorGrupo = {};
+      if (grupos !== 'todos') {
+        grupos.forEach((gid) => {
+          if (!cliente.fluxosPorGrupo[gid]) {
+            cliente.fluxosPorGrupo[gid] = this.listarFluxos(gid)[0]?.id || 'padrao';
+          }
+        });
+        Object.keys(cliente.fluxosPorGrupo).forEach((gid) => {
+          if (!grupos.includes(gid)) delete cliente.fluxosPorGrupo[gid];
+        });
+      }
+    }
+    if (fluxoPorGrupo && typeof fluxoPorGrupo === 'object') {
+      if (!cliente.fluxosPorGrupo) cliente.fluxosPorGrupo = {};
+      Object.assign(cliente.fluxosPorGrupo, fluxoPorGrupo);
     }
 
     this.persistir();
-    return true;
+    return { ok: true };
   },
 
   listarClientesDoGrupo(grupoId) {
@@ -2428,12 +2767,23 @@ const FlowStore = {
     });
   },
 
+  listarClientesDoFluxo(grupoId, fluxoId) {
+    return this.listarClientesDoGrupo(grupoId).filter(
+      (c) => this.clientePertenceFluxo(c.id, grupoId, fluxoId),
+    );
+  },
+
   rotuloGruposCliente(clienteId) {
     const c = CLIENTES.find((x) => x.id === clienteId);
     if (!c || c.grupos === 'todos') return 'Todos os grupos';
     if (!Array.isArray(c.grupos) || !c.grupos.length) return '—';
     return c.grupos
-      .map((gid) => GRUPOS.find((g) => g.id === gid)?.nome || gid)
+      .map((gid) => {
+        const g = GRUPOS.find((x) => x.id === gid)?.nome || gid;
+        const f = c.fluxosPorGrupo?.[gid];
+        const fn = f ? this.nomeFluxo(gid, f) : null;
+        return fn ? `${g} · ${fn}` : g;
+      })
       .join(', ');
   },
 

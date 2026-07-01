@@ -1,5 +1,6 @@
 import type { Edge, Node } from '@xyflow/react';
 import { buildFlowGraph, type FlowNodeData } from './buildFlowGraph';
+import { avisar } from '../../js/ui-dialog.js';
 
 function escapeMermaidText(text: string): string {
   return text
@@ -109,8 +110,8 @@ export async function exportMermaidToFile(clienteId: string, titulo?: string) {
 
   try {
     await navigator.clipboard.writeText(wrapped);
-    alert(`Mermaid exportado (${filename}) e copiado para a área de transferência.`);
+    await avisar(`Mermaid exportado (${filename}) e copiado para a área de transferência.`);
   } catch {
-    alert(`Mermaid exportado: ${filename}`);
+    await avisar(`Mermaid exportado: ${filename}`);
   }
 }

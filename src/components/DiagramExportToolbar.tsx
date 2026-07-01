@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { Panel, useReactFlow } from '@xyflow/react';
 import { exportDiagramToPng } from '../lib/exportDiagramImage';
 import { exportMermaidToFile } from '../lib/exportMermaid';
+import { avisar } from '../../js/ui-dialog.js';
 
 type Props = {
   clienteId: string;
@@ -47,7 +48,7 @@ export default function DiagramExportToolbar({ clienteId, titulo, clienteCor, on
     try {
       await exportDiagramToPng(options, nomeArquivo());
     } catch {
-      alert('Não foi possível gerar a imagem do diagrama.');
+      await avisar('Não foi possível gerar a imagem do diagrama.');
     } finally {
       setBusy(false);
     }
@@ -58,7 +59,7 @@ export default function DiagramExportToolbar({ clienteId, titulo, clienteCor, on
     try {
       await exportMermaidToFile(clienteId, tituloFluxo);
     } catch {
-      alert('Não foi possível exportar o Mermaid.');
+      await avisar('Não foi possível exportar o Mermaid.');
     } finally {
       setBusy(false);
     }
