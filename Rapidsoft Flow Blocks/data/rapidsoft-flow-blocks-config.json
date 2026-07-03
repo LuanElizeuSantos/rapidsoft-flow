@@ -1,0 +1,150 @@
+{
+  "nodes": {
+    "criar-pedido": {
+      "id": "criar-pedido",
+      "label": "CRIAR PEDIDO",
+      "tipo": "processo"
+    },
+    "tentar-sugerir": {
+      "id": "tentar-sugerir",
+      "label": "TENTAR SUGERIR",
+      "tipo": "processo"
+    },
+    "bloqueio-credito": {
+      "id": "bloqueio-credito",
+      "label": "BLOQUEIO CRÉDITO?",
+      "tipo": "decisao"
+    },
+    "desbloquear-credito": {
+      "id": "desbloquear-credito",
+      "label": "DESBLOQUEAR PEDIDO CRÉDITO",
+      "tipo": "processo"
+    },
+    "sugerir-pedido": {
+      "id": "sugerir-pedido",
+      "label": "SUGERIR PEDIDO",
+      "tipo": "processo"
+    },
+    "listar": {
+      "id": "listar",
+      "label": "LISTAR",
+      "tipo": "processo"
+    },
+    "enviar-conferencia": {
+      "id": "enviar-conferencia",
+      "label": "ENVIAR PARA CONFERÊNCIA",
+      "tipo": "processo"
+    },
+    "conferir": {
+      "id": "conferir",
+      "label": "CONFERIR",
+      "tipo": "processo"
+    },
+    "selecionar-faturamento": {
+      "id": "selecionar-faturamento",
+      "label": "SELECIONAR PARA FATURAMENTO",
+      "tipo": "processo"
+    },
+    "emissao-notas": {
+      "id": "emissao-notas",
+      "label": "EMISSÃO DE NOTAS",
+      "tipo": "processo"
+    }
+  },
+  "baseFlow": {
+    "sequenciaPosCredito": [],
+    "nome": "ETAPA 1",
+    "descricao": "",
+    "regras": {
+      "subfluxos": [],
+      "ligacoes": [],
+      "decisoes": []
+    }
+  },
+  "grupos": [
+    {
+      "id": "teste",
+      "nome": "TESTE",
+      "descricao": ""
+    }
+  ],
+  "grupoFluxos": {
+    "teste": {
+      "fluxos": {
+        "padrao": {
+          "id": "padrao",
+          "nome": "Fluxo teste",
+          "descricao": "Fluxo base do grupo TESTE.",
+          "sequenciaPosCredito": [
+            "etapa-1",
+            "etapa-2"
+          ],
+          "estrutura": "livre",
+          "regras": {
+            "subfluxos": [],
+            "ligacoes": [],
+            "decisoes": []
+          },
+          "processosDetalhados": {
+            "etapa-1": {
+              "id": "etapa-1",
+              "nome": "ETAPA 1",
+              "descricao": "",
+              "sequenciaPosCredito": [],
+              "regras": {
+                "subfluxos": [],
+                "ligacoes": [],
+                "decisoes": []
+              },
+              "cadastrado": true,
+              "blocklyWorkspace": "{\"blocks\":{\"languageVersion\":0,\"blocks\":[{\"type\":\"rpa_abrir_url\",\"id\":\"z(U3i^_^}6Ui|gtS)JMM\",\"x\":-684,\"y\":-372,\"fields\":{\"URL\":\"https://localhost/\"},\"next\":{\"block\":{\"type\":\"rpa_esperar_elemento\",\"id\":\"USLy!$Su)d04WP0SI/$m\",\"fields\":{\"SELETOR\":\".loginPasswordField input\"},\"next\":{\"block\":{\"type\":\"rpa_digitar_texto\",\"id\":\"2!O:1^V~tzL~c:q5rqy_\",\"fields\":{\"TEXTO\":\"ccs.luan.elizeu\"},\"next\":{\"block\":{\"type\":\"rpa_esperar\",\"id\":\"[H),nI2ls*G}.^8dgEPu\",\"fields\":{\"SEGUNDOS\":1},\"next\":{\"block\":{\"type\":\"rpa_tecla\",\"id\":\"3eSdApJmm2o.FOi#Tzqo\",\"fields\":{\"TECLA\":\"Enter\"},\"next\":{\"block\":{\"type\":\"rpa_digitar_texto\",\"id\":\"rQq1tJA4_8%#07)It$Ue\",\"fields\":{\"TEXTO\":\"\"},\"next\":{\"block\":{\"type\":\"rpa_esperar\",\"id\":\"@OVDY`j_Vwx/%@wp#Sy`\",\"fields\":{\"SEGUNDOS\":1},\"next\":{\"block\":{\"type\":\"rpa_tecla\",\"id\":\"*;F2YYd_yJz/SFzAT{oK\",\"fields\":{\"TECLA\":\"Enter\"},\"next\":{\"block\":{\"type\":\"rpa_esperar_elemento\",\"id\":\"}Wv_b*#F+s@DqG[)62*.\",\"fields\":{\"SELETOR\":\"i.alarm.icon\"},\"next\":{\"block\":{\"type\":\"rpa_atalho_ctrl_espaco\",\"id\":\"{-?(E,:OCFGkFkSJy;:V\",\"next\":{\"block\":{\"type\":\"rpa_esperar\",\"id\":\"VfAf:-ppzz;9/3zD=8QM\",\"fields\":{\"SEGUNDOS\":1},\"next\":{\"block\":{\"type\":\"rpa_digitar_texto\",\"id\":\"7?a+M5(v$va9uzr:Ocdl\",\"fields\":{\"TEXTO\":\"CCPV005\"},\"next\":{\"block\":{\"type\":\"rpa_esperar\",\"id\":\"XQyA#R(@.5u|)MN|(z7k\",\"fields\":{\"SEGUNDOS\":1},\"next\":{\"block\":{\"type\":\"rpa_tecla\",\"id\":\"wWxBhN(+t-7BD]%m]BVx\",\"fields\":{\"TECLA\":\"Enter\"},\"next\":{\"block\":{\"type\":\"rpa_esperar\",\"id\":\"m/4t4jX}}ZCx~nhP,b?o\",\"fields\":{\"SEGUNDOS\":1},\"next\":{\"block\":{\"type\":\"rpa_esperar_usuario\",\"id\":\"rQ|tU1h(H}(-#YKm-_tS\",\"fields\":{\"MENSAGEM\":\"conferir e continuar\",\"TECLA\":\"Enter\"},\"next\":{\"block\":{\"type\":\"rpa_esperar\",\"id\":\"(9K(M?^.zEkeB@LcP_/=\",\"fields\":{\"SEGUNDOS\":1},\"next\":{\"block\":{\"type\":\"rpa_tecla\",\"id\":\"#B~L1Vz`C+oCh-^x+710\",\"fields\":{\"TECLA\":\"F7\"},\"next\":{\"block\":{\"type\":\"rpa_esperar\",\"id\":\"XZ[a|(;Q|TJte4;KE-M*\",\"fields\":{\"SEGUNDOS\":5},\"next\":{\"block\":{\"type\":\"rpa_atalho_teclas\",\"id\":\"#u,/_xbn2zB62menr?e9\",\"fields\":{\"MODIFICADOR\":\"Alt\",\"TECLA\":\"C\"},\"next\":{\"block\":{\"type\":\"rpa_esperar\",\"id\":\"9!vii,@ru}qIA}8z?2Fh\",\"fields\":{\"SEGUNDOS\":5},\"next\":{\"block\":{\"type\":\"rpa_seta\",\"id\":\"RRN|c}?|i_Ow[.|^Wej|\",\"fields\":{\"SETA\":\"ArrowUp\"},\"next\":{\"block\":{\"type\":\"rpa_esperar\",\"id\":\"ksC*gVIvqU`];sr(YhC5\",\"fields\":{\"SEGUNDOS\":1},\"next\":{\"block\":{\"type\":\"rpa_seta\",\"id\":\"E1Ly:}(dRd=0Cg7VCT|]\",\"fields\":{\"SETA\":\"ArrowUp\"}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}]}}"
+            }
+          },
+          "vinculosDetalhe": {
+            "etapa-1": "etapa-1"
+          },
+          "cadastrado": true
+        }
+      }
+    },
+    "padrao": {
+      "fluxos": {}
+    }
+  },
+  "clientes": [
+    {
+      "id": "padrao",
+      "nome": "Padrão",
+      "temCustomizacao": false
+    }
+  ],
+  "clientTemas": {},
+  "customizations": {},
+  "creditFork": {
+    "decisao": "bloqueio-credito",
+    "desbloquear": "desbloquear-credito",
+    "mergeEm": "sugerir-pedido",
+    "retornoPara": "sugerir-pedido"
+  },
+  "diagramLayouts": {
+    "teste:padrao:macro:padrao": {
+      "nodes": {},
+      "edges": {
+        "removed": [],
+        "overrides": {},
+        "custom": []
+      }
+    },
+    "teste:padrao:etapa-1:padrao": {
+      "nodes": {},
+      "edges": {
+        "removed": [],
+        "overrides": {},
+        "custom": []
+      }
+    }
+  },
+  "grupoAtivo": "teste",
+  "fluxoAtivo": "padrao",
+  "processoAtivo": "etapa-1"
+}

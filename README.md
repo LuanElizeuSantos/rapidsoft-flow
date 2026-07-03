@@ -3,6 +3,9 @@
 Editor visual de fluxogramas de processos — faturamento, PCP, macros customizados e variações por cliente.  
 Stack: **HTML/JS** (capa e manutenção) + **React/Vite** (diagrama interativo com [XYFlow](https://reactflow.dev/)).
 
+> **Rapidsoft Flow Blocks** — variante com processo detalhado em **Blockly** e exportação **Python (RPA)**.  
+> Ver pasta [`Rapidsoft Flow Blocks/`](./Rapidsoft%20Flow%20Blocks/README.md).
+
 ---
 
 ## O que dá para fazer

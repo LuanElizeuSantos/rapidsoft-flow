@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rapidsoft Flow Blocks — Diagrama</title>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header__brand">
+        <a href="index.html" class="header__voltar">← Início</a>
+        <h1>Rapidsoft Flow Blocks</h1>
+        <p>Fluxo macro + detalhamento em blocos (RPA) · <span id="fluxo-grupo-label"></span></p>
+      </div>
+      <div class="header__acoes">
+        <a href="index.html" id="link-novo-cliente" class="cliente-btn cliente-btn--link" title="Cadastrar cliente na capa">+ Cliente</a>
+        <div class="header__clientes" id="cliente-selector" role="tablist" aria-label="Selecionar cliente"></div>
+        <button type="button" class="cliente-btn" id="btn-manutencao">Manutenção</button>
+      </div>
+    </header>
+
+    <div id="root"></div>
+  </div>
+
+  <aside id="painel-manutencao" class="painel-manutencao">
+    <div class="painel-manutencao__header">
+      <h3>Manutenção — <span id="manutencao-cliente">Padrão</span></h3>
+      <button type="button" class="btn-fechar" id="btn-fechar-manutencao" title="Fechar">✕</button>
+    </div>
+
+    <nav class="painel-tabs" role="tablist">
+      <button type="button" class="painel-tab painel-tab--ativo" data-tab="etapas" role="tab">Etapas</button>
+      <button type="button" class="painel-tab" data-tab="regras" role="tab" id="tab-btn-regras">Regras</button>
+    </nav>
+
+    <div class="painel-corpo">
+      <div id="tab-etapas" class="painel-tab-pane painel-tab-pane--ativa" role="tabpanel">
+        <details class="painel-sistema" id="bloco-sistema-fixo">
+          <summary>Bloco fixo do sistema</summary>
+          <ul id="lista-sistema" class="lista-sistema"></ul>
+          <div class="painel-campo">
+            <label for="select-retorno-credito">Texto do retorno (volta →)</label>
+            <select id="select-retorno-credito" class="input-select"></select>
+            <p class="painel-dica painel-dica--inline">Só altera o rótulo abaixo de Desbloquear. A linha principal após o crédito continua em Sugerir Pedido.</p>
+          </div>
+        </details>
+
+        <p class="painel-dica">Ordem após o crédito. ⊘ pula etapa do padrão neste cliente.</p>
+        <details class="painel-sistema painel-sistema--inline" id="detalhes-merge">
+          <summary>Como etapas novas do padrão se encaixam</summary>
+          <ul class="lista-merge-regras">
+            <li><strong>Antes de X</strong> (ex.: APPEL antes de Listar): etapas novas do padrão entram <em>acima</em> da etapa do cliente.</li>
+            <li><strong>Depois de X</strong>: etapas novas do padrão entram <em>abaixo</em> da etapa do cliente.</li>
+            <li><strong>Gatilho / fluxo alternativo</strong>: ao salvar, se a etapa nova do padrão ficar <em>colada</em> na região do gatilho ou do ramo alternativo, escolha <em>antes</em> ou <em>depois</em> por cliente. Etapas só ancoradas (antes/depois de) entram automaticamente.</li>
+          </ul>
+        </details>
+        <ol id="lista-sequencia" class="lista-sequencia"></ol>
+
+        <div id="secao-etapas-auxiliares" class="painel-box" hidden>
+          <h4>Etapas em fluxos alternativos</h4>
+          <p class="painel-dica painel-dica--inline">Comentário e código da rotina para etapas que não estão na sequência principal.</p>
+          <ul id="lista-etapas-auxiliares" class="lista-sequencia lista-sequencia--aux"></ul>
+        </div>
+
+        <div id="secao-puladas" class="painel-box" hidden>
+          <h4>Puladas neste cliente</h4>
+          <ul id="lista-puladas" class="lista-puladas"></ul>
+        </div>
+
+        <div class="painel-box painel-box--add">
+          <h4>Adicionar etapa</h4>
+          <p id="dica-primeira-etapa" class="painel-dica painel-dica--inline" hidden>Primeira etapa do fluxo — será criada no início. Depois disso você poderá escolher antes/depois de qualquer passo.</p>
+          <div id="secao-ancora-etapa" class="painel-campo">
+            <label>Posição na sequência</label>
+            <div class="painel-ancora-linha">
+              <select id="select-ancora-tipo" class="input-select input-select--ancora-tipo">
+                <option value="antes">Antes de</option>
+                <option value="depois" selected>Depois de</option>
+              </select>
+              <select id="select-ancora-ref" class="input-select"></select>
+            </div>
+            <p class="painel-dica painel-dica--inline">Ex.: depois de TESTE 2 para criar TESTE 4 ligado a esse ramo.</p>
+          </div>
+          <div class="painel-campo">
+            <label for="select-nova-etapa-tipo">Tipo</label>
+            <select id="select-nova-etapa-tipo" class="input-select">
+              <option value="processo">Processo</option>
+              <option value="decisao">Decisão</option>
+            </select>
+          </div>
+          <div class="painel-campo">
+            <label for="input-nova-etapa">Criar nova</label>
+            <input type="text" id="input-nova-etapa" class="input-texto" placeholder="Nome da etapa">
+            <button type="button" class="btn-acao btn-acao--block" id="btn-criar-etapa">Criar etapa</button>
+            <p class="painel-dica painel-dica--inline">Decisões entram na sequência; ligue SIM/NÃO depois, conforme adicionar mais etapas.</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-regras" class="painel-tab-pane" role="tabpanel" hidden>
+        <p id="dica-regras" class="painel-dica">Gatilhos pulam etapas. Fluxos alternativos executam etapas extras antes de voltar. Decisões ramificam SIM/NÃO.</p>
+
+        <div id="secao-gatilhos" class="painel-box">
+          <h4>Gatilho</h4>
+          <ul id="lista-gatilhos" class="lista-regras"></ul>
+          <div class="painel-campo">
+            <span class="painel-campo__label">Origem</span>
+            <div class="painel-radio-grupo">
+              <label class="painel-radio"><input type="radio" name="salto-modo" value="existente" checked> Etapa existente</label>
+              <label class="painel-radio"><input type="radio" name="salto-modo" value="nova"> Criar nova etapa</label>
+            </div>
+          </div>
+          <div id="salto-bloco-existente" class="painel-campo">
+            <label for="select-salto-de">De</label>
+            <select id="select-salto-de" class="input-select"></select>
+          </div>
+          <div id="salto-bloco-nova" class="painel-campo" hidden>
+            <label for="input-salto-nova-etapa">Nome da etapa</label>
+            <input type="text" id="input-salto-nova-etapa" class="input-texto" placeholder="Nome da etapa">
+            <label>Posição na sequência</label>
+            <div class="painel-ancora-linha">
+              <select id="select-salto-ancora-tipo" class="input-select input-select--ancora-tipo">
+                <option value="antes">Antes de</option>
+                <option value="depois" selected>Depois de</option>
+              </select>
+              <select id="select-salto-ancora-ref" class="input-select"></select>
+            </div>
+          </div>
+          <div class="painel-campo">
+            <label for="select-salto-para">Para</label>
+            <select id="select-salto-para" class="input-select"></select>
+          </div>
+          <button type="button" class="btn-acao btn-acao--block" id="btn-adicionar-salto">Adicionar gatilho</button>
+        </div>
+
+        <div id="secao-fluxo-alternativo" class="painel-box">
+          <h4>Fluxo alternativo</h4>
+          <p class="painel-dica painel-dica--inline">Após uma etapa (principal ou dentro de outro fluxo), executa sequência própria e volta para outra etapa. No <strong>Padrão</strong>, defina ramos aqui (De / Volta para) — o diagrama não cria subfluxos ao arrastar setas.</p>
+          <ul id="lista-subfluxos" class="lista-regras"></ul>
+          <div class="painel-campo">
+            <label for="select-subfluxo-de">De</label>
+            <select id="select-subfluxo-de" class="input-select"></select>
+          </div>
+          <div class="painel-campo">
+            <label>Passos do fluxo</label>
+            <ul id="lista-passos-subfluxo" class="lista-regras lista-passos-subfluxo">
+              <li class="regra-item regra-item--vazio">Nenhum passo</li>
+            </ul>
+            <label for="select-nova-etapa-subfluxo-tipo">Tipo</label>
+            <select id="select-nova-etapa-subfluxo-tipo" class="input-select">
+              <option value="processo">Processo</option>
+              <option value="decisao">Decisão</option>
+            </select>
+            <label for="input-nova-etapa-subfluxo">Adicionar etapa</label>
+            <input type="text" id="input-nova-etapa-subfluxo" class="input-texto" placeholder="Nome da etapa">
+            <button type="button" class="btn-acao btn-acao--block" id="btn-criar-etapa-subfluxo">Adicionar ao fluxo</button>
+            <p class="painel-dica painel-dica--inline">Etapas exclusivas deste fluxo — podem incluir decisões e fluxos alternativos aninhados.</p>
+          </div>
+          <div class="painel-campo">
+            <label for="select-subfluxo-para">Volta para</label>
+            <select id="select-subfluxo-para" class="input-select"></select>
+          </div>
+          <div class="painel-campo">
+            <label for="input-rotulo-subfluxo">Rótulo (opcional)</label>
+            <input type="text" id="input-rotulo-subfluxo" class="input-texto" placeholder="Ex: conferência especial">
+          </div>
+          <p id="subfluxo-form-erro" class="painel-erro" hidden role="alert"></p>
+          <button type="button" class="btn-acao btn-acao--block" id="btn-criar-subfluxo">Criar fluxo alternativo</button>
+        </div>
+
+        <div id="secao-decisoes" class="painel-box">
+          <h4>Decisão</h4>
+          <ul id="lista-decisoes" class="lista-regras"></ul>
+          <div class="painel-campo">
+            <label for="select-decisao-apos">Inserir após</label>
+            <select id="select-decisao-apos" class="input-select"></select>
+          </div>
+          <div class="painel-campo">
+            <label for="input-decisao-label">Pergunta</label>
+            <input type="text" id="input-decisao-label" class="input-texto" placeholder="Ex: TEM JOGO?">
+          </div>
+          <div class="painel-campo">
+            <label for="select-decisao-sim">SIM → (opcional)</label>
+            <select id="select-decisao-sim" class="input-select"></select>
+          </div>
+          <div class="painel-campo">
+            <label for="select-decisao-nao">NÃO → (opcional)</label>
+            <select id="select-decisao-nao" class="input-select"></select>
+          </div>
+          <p class="painel-dica painel-dica--inline">Destinos SIM/NÃO podem ficar em branco e ser ligados depois na aba Etapas.</p>
+          <button type="button" class="btn-acao btn-acao--block" id="btn-criar-decisao">Criar decisão</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="painel-footer">
+      <button type="button" class="btn-acao btn-acao--primario btn-acao--block" id="btn-salvar">Salvar no navegador</button>
+      <button type="button" class="btn-acao btn-acao--block" id="btn-exportar">Exportar JSON</button>
+      <button type="button" class="btn-acao btn-acao--block btn-acao--danger-outline" id="btn-resetar" hidden>Restaurar padrão</button>
+    </footer>
+  </aside>
+
+  <dialog id="dialog-merge-gatilho" class="painel-dialog-merge">
+    <form id="form-merge-gatilho" class="painel-dialog-merge__form">
+      <h3 class="painel-dialog-merge__titulo">Posição em relação ao gatilho/fluxo</h3>
+      <p id="dialog-merge-gatilho-etapa" class="painel-dialog-merge__sub"></p>
+      <p class="painel-dica painel-dica--inline">Ao salvar, só pergunta se a etapa ficar na região de um <strong>gatilho</strong> ou <strong>fluxo alternativo</strong> (nó direto). Âncoras antes/depois de etapa do cliente são automáticas.</p>
+      <div id="lista-merge-gatilho" class="lista-merge-gatilho"></div>
+      <div class="painel-dialog-merge__acoes">
+        <button type="button" class="btn-acao" id="btn-cancelar-merge-gatilho">Cancelar</button>
+        <button type="submit" class="btn-acao btn-acao--primario">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-confirm" class="ui-dialog">
+    <div class="ui-dialog__form">
+      <p id="dialog-confirm-mensagem" class="ui-dialog__mensagem"></p>
+      <div class="ui-dialog__acoes">
+        <button type="button" class="btn-acao" id="btn-confirm-nao">Cancelar</button>
+        <button type="button" class="btn-acao btn-acao--danger-outline" id="btn-confirm-sim">Confirmar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="dialog-aviso" class="ui-dialog">
+    <div class="ui-dialog__form">
+      <p id="dialog-aviso-mensagem" class="ui-dialog__mensagem"></p>
+      <div class="ui-dialog__acoes">
+        <button type="button" class="btn-acao btn-acao--primario" id="btn-aviso-ok">OK</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="dialog-excluir-bloco" class="ui-dialog">
+    <div class="ui-dialog__form">
+      <p id="dialog-excluir-bloco-mensagem" class="ui-dialog__mensagem">O que deseja fazer com este bloco?</p>
+      <div class="ui-dialog__acoes ui-dialog__acoes--col">
+        <button type="button" class="btn-acao" id="btn-excluir-lixeira">Enviar para lixeira</button>
+        <button type="button" class="btn-acao btn-acao--danger-outline" id="btn-excluir-permanente">Excluir permanentemente</button>
+        <button type="button" class="btn-acao" id="btn-excluir-cancelar">Cancelar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
